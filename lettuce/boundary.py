@@ -71,7 +71,7 @@ class AntiBounceBackOutlet:
         assert (isinstance(direction, list) and len(direction) in [1,2,3] and ((np.abs(sum(direction)) == 1) and (np.max(np.abs(direction)) == 1) and (1 in direction) ^ (-1 in direction))), \
             LettuceException("Wrong direction. Expected list of length 1, 2 or 3 with all entrys 0 except one 1 or -1, "
                                 f"but got {type(direction)} of size {len(direction)} and entrys {direction}.")
-        direction = np.array(direction)
+        self.direction = np.array(direction)
         self.lattice = lattice
 
         #select velocities to be bounced (the ones pointing in "direction")
@@ -80,19 +80,19 @@ class AntiBounceBackOutlet:
         # build indices of u and f that determine the side of the domain
         self.index = []
         self.neighbor = []
+        self.indexInner = []
         self.corners = corners
         for i in direction:
             if i == 0:
-                if self.corners:
-                    self.index.append(slice(None))
-                    self.neighbor.append(slice(None))
-                else:
-                    self.index.append(slice(1,-1))
-                    self.neighbor.append(slice(1,-1))
+                self.index.append(slice(None))
+                self.indexInner.append(slice(1,-1))
+                self.neighbor.append(slice(None))
             if i == 1:
+                self.indexInner.append(-1)
                 self.index.append(-1)
                 self.neighbor.append(-2)
             if i == -1:
+                self.indexInner.append(0)
                 self.index.append(0)
                 self.neighbor.append(1)
         # construct indices for einsum and get w in proper shape for the calculation in each dimension
@@ -109,17 +109,49 @@ class AntiBounceBackOutlet:
         #--------------2D only---------------------
         self.corner1 = [0 if x == slice(None) else x for x in self.index]
         self.corner2 = [-1 if x == slice(None) else x for x in self.index]
-        self.cornerNeighbor1 = [1 if x == slice(None) else x for x in self.neighbor]
-        self.cornerNeighbor2 = [-2 if x == slice(None) else x for x in self.neighbor]
+        #self.cornerUw1 = [x for x in self.corner1]
+        #self.cornerUw2 = [x for x in self.corner2]
+        #blab = int(np.where(np.array(self.corner1) == np.array(self.corner2))[0])
+        self.cornerUw1 = [slice(None), 0]
+        self.cornerUw2 = [slice(None), -1]
+        #self.cornerNeighbor1 = [1 if x == slice(None) else x for x in self.neighbor]
+        #self.cornerNeighbor2 = [-2 if x == slice(None) else x for x in self.neighbor]
 
     def __call__(self, f):
         u = self.lattice.u(f)
         u_w = u[[slice(None)] + self.index] + 0.5 * (u[[slice(None)] + self.index] - u[[slice(None)] + self.neighbor])
+
+        #orthogonal
+        i = self.velocities[torch.where(self.lattice.e[self.velocities] == 0)[0]]
+        f[[[np.array(self.lattice.stencil.opposite)[i]]] + self.corner1] = (
+                - f[[[i]] + self.corner1] + self.lattice.w[i] * self.lattice.rho(f)[[slice(None)] + self.corner1] *
+                (2 + torch.einsum('c, c ->', self.lattice.e[i], u_w[self.cornerUw1]) ** 2 / self.lattice.cs ** 4
+                - (torch.norm(u_w[self.cornerUw1], dim=0) / self.lattice.cs) ** 2)
+        )
+        f[[[self.lattice.stencil.opposite[i]]] + self.corner2] = (
+                - f[[[i]] + self.corner2] + self.lattice.w[i] * self.lattice.rho(f)[[slice(None)] + self.corner2] *
+                (2 + torch.einsum('c, c ->', self.lattice.e[i], u_w[self.cornerUw2]) ** 2 / self.lattice.cs ** 4
+                - (torch.norm(u_w[self.cornerUw2], dim=0) / self.lattice.cs) ** 2)
+        )
         if self.corners:
-            u_w[:, 0] = u[[slice(None)] + self.corner1] + np.sqrt(0.5) * (u[[slice(None)] + self.corner1] - u[[slice(None)] + self.cornerNeighbor1])
-            u_w[:, -1] = u[[slice(None)] + self.corner2] + np.sqrt(0.5) * (u[[slice(None)] + self.corner2] - u[[slice(None)] + self.cornerNeighbor2])
-        f[[np.array(self.lattice.stencil.opposite)[self.velocities]] + self.index] = (
-            - f[[self.velocities] + self.index] + self.w * self.lattice.rho(f)[[slice(None)] + self.index] *
+            #diagonal nach innen
+            i1 = int(self.velocities[[self.lattice.stencil.e[self.velocities][:, [np.where(self.direction == 0)[0][0]]] == -1][0].squeeze()])
+            i2 = int(self.velocities[[self.lattice.stencil.e[self.velocities][:, [np.where(self.direction == 0)[0][0]]] == 1][0].squeeze()])
+            f[[[self.lattice.stencil.opposite[i1]]] + self.corner1] = (
+                    - f[[[i1]] + self.corner1] + self.lattice.w[i1] * self.lattice.rho(f)[[slice(None)] + self.corner1] *
+                    (2 + torch.einsum('c, c ->', self.lattice.e[i1], u_w[self.cornerUw1]) ** 2 / self.lattice.cs ** 4
+                     - (torch.norm(u_w[self.cornerUw1], dim=0) / self.lattice.cs) ** 2)
+            )
+            f[[[self.lattice.stencil.opposite[i2]]] + self.corner2] = (
+                    - f[[[i2]] + self.corner2] + self.lattice.w[i2] * self.lattice.rho(f)[[slice(None)] + self.corner2] *
+                    (2 + torch.einsum('c, c ->', self.lattice.e[i2], u_w[self.cornerUw2]) ** 2 / self.lattice.cs ** 4
+                     - (torch.norm(u_w[self.cornerUw2], dim=0) / self.lattice.cs) ** 2)
+            )
+        #    u_w[:, 0] = u[[slice(None)] + self.corner1] + np.sqrt(0.5) * (u[[slice(None)] + self.corner1] - u[[slice(None)] + self.cornerNeighbor1])
+        #    u_w[:, -1] = u[[slice(None)] + self.corner2] + np.sqrt(0.5) * (u[[slice(None)] + self.corner2] - u[[slice(None)] + self.cornerNeighbor2])
+        u_w = u_w[:, 1:-1]
+        f[[np.array(self.lattice.stencil.opposite)[self.velocities]] + self.indexInner] = (
+            - f[[self.velocities] + self.indexInner] + self.w * self.lattice.rho(f)[[slice(None)] + self.indexInner] *
             (2 + torch.einsum(self.dims, self.lattice.e[self.velocities], u_w) ** 2 / self.lattice.cs ** 4
              - (torch.norm(u_w,dim=0) / self.lattice.cs) ** 2)
         )
