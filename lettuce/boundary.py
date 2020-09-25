@@ -101,9 +101,17 @@ class AntiBounceBackOutlet:
             self.dims = 'dc, c -> dc'
             self.w = self.lattice.w[self.velocities]
 
+        #--------------2D only---------------------
+        self.corner1 = [0 if x == slice(None) else x for x in self.index]
+        self.corner2 = [-1 if x == slice(None) else x for x in self.index]
+        self.cornerNeighbor1 = [1 if x == slice(None) else x for x in self.neighbor]
+        self.cornerNeighbor2 = [-2 if x == slice(None) else x for x in self.neighbor]
+
     def __call__(self, f):
         u = self.lattice.u(f)
         u_w = u[[slice(None)] + self.index] + 0.5 * (u[[slice(None)] + self.index] - u[[slice(None)] + self.neighbor])
+        u_w[:, 0] = u[[slice(None)] + self.corner1] + 0.5 * (u[[slice(None)] + self.corner1] - u[[slice(None)] + self.cornerNeighbor1])
+        u_w[:, -1] = u[[slice(None)] + self.corner2] + 0.5 * (u[[slice(None)] + self.corner2] - u[[slice(None)] + self.cornerNeighbor2])
         f[[np.array(self.lattice.stencil.opposite)[self.velocities]] + self.index] = (
             - f[[self.velocities] + self.index] + self.w * self.lattice.rho(f)[[slice(None)] + self.index] *
             (2 + torch.einsum(self.dims, self.lattice.e[self.velocities], u_w) ** 2 / self.lattice.cs ** 4

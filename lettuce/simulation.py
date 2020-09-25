@@ -74,6 +74,11 @@ class Simulation:
             for boundary in self._boundaries:
                 self.f = boundary(self.f)
             self._report()
+            print("----------{}----------".format(self.i))
+            for o in range(0,self.lattice.Q):
+                index = np.where(np.abs(self.f.cpu().numpy()[o, :, :]) == np.max(np.abs(self.f.cpu().numpy()[o, :, :])))
+                index = list(zip(index[0], index[1]))
+                print("{}: {}".format(o, index))
         end = timer()
         seconds = end-start
         num_grid_points = self.lattice.rho(self.f).numel()
