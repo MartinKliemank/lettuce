@@ -79,7 +79,7 @@ class Obstacle2D(object):
     def boundaries(self):
         x, y = self.grid
         return [
-            AntiBounceBackOutlet(self.units.lattice, [1, 0]),
+            AntiBounceBackOutlet(self.units.lattice, [1, 0], corners=True),
             AntiBounceBackOutlet(self.units.lattice, [0, -1]),
             AntiBounceBackOutlet(self.units.lattice, [0, 1]),
             EquilibriumBoundaryPU(
