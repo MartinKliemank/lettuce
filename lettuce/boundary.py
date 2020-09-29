@@ -38,6 +38,44 @@ class BounceBackBoundary:
         return self.mask
 
 
+class HalfWayBounceBackBoundary:
+
+    def __init__(self, mask, lattice):
+        self.obstacle = lattice.convert_to_tensor(mask)
+        self.lattice = lattice
+
+        if lattice.D == 2:
+            x, y = mask.shape
+            self.mask = np.zeros((lattice.Q, x, y), dtype=bool)
+            a, b = np.where(mask)
+            for p in range(0, len(a)):
+                for j in range(0, lattice.Q):
+                    i = lattice.stencil.opposite[j]
+                    if not mask[a[p] + lattice.stencil.e[i, 0], b[p] + lattice.stencil.e[i, 1]]:
+                        self.mask[j, a[p] + lattice.stencil.e[i, 0], b[p] + lattice.stencil.e[i, 1]] = 1
+        elif lattice.D == 3:
+            x, y, z = mask.shape
+            self.mask = np.zeros((lattice.Q, x, y, z), dtype=bool)
+            a, b, c = np.where(mask)
+            for p in range(0, len(a)):
+                for j in range(0, lattice.Q):
+                    i = lattice.stencil.opposite[j]
+                    if not mask[a[p] + lattice.stencil.e[i, 0], b[p] + lattice.stencil.e[i, 1], c[p] + lattice.stencil.e[i, 2]]:
+                        self.mask[j, a[p] + lattice.stencil.e[i, 0], b[p] + lattice.stencil.e[i, 1], c[p] + lattice.stencil.e[i, 2]] = 1
+
+        self.mask = self.lattice.convert_to_tensor(self.mask)
+
+    def __call__(self, f):
+        f = torch.where(self.mask, f[self.lattice.stencil.opposite], f)
+        return f
+
+    def make_no_stream_mask(self, f_shape):
+        return self.obstacle | self.mask
+
+    def make_no_collision_mask(self, f_shape):
+        assert self.obstacle.shape == f_shape[1:]
+        return self.obstacle
+
 class EquilibriumBoundaryPU:
     """Sets distributions on this boundary to equilibrium with predefined velocity and pressure.
     Note that this behavior is generally not compatible with the Navier-Stokes equations.
