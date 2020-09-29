@@ -51,8 +51,11 @@ class HalfWayBounceBackBoundary:
             for p in range(0, len(a)):
                 for j in range(0, lattice.Q):
                     i = lattice.stencil.opposite[j]
-                    if not mask[a[p] + lattice.stencil.e[i, 0], b[p] + lattice.stencil.e[i, 1]]:
-                        self.mask[j, a[p] + lattice.stencil.e[i, 0], b[p] + lattice.stencil.e[i, 1]] = 1
+                    try:  # try to avoid issues in case the neighboring cell does not exist
+                        if not mask[a[p] + lattice.stencil.e[i, 0], b[p] + lattice.stencil.e[i, 1]]:
+                            self.mask[j, a[p] + lattice.stencil.e[i, 0], b[p] + lattice.stencil.e[i, 1]] = 1
+                    except IndexError:
+                        pass  # passing when trying to read and write to index outside the domain
         elif lattice.D == 3:
             x, y, z = mask.shape
             self.mask = np.zeros((lattice.Q, x, y, z), dtype=bool)
@@ -60,8 +63,11 @@ class HalfWayBounceBackBoundary:
             for p in range(0, len(a)):
                 for j in range(0, lattice.Q):
                     i = lattice.stencil.opposite[j]
-                    if not mask[a[p] + lattice.stencil.e[i, 0], b[p] + lattice.stencil.e[i, 1], c[p] + lattice.stencil.e[i, 2]]:
-                        self.mask[j, a[p] + lattice.stencil.e[i, 0], b[p] + lattice.stencil.e[i, 1], c[p] + lattice.stencil.e[i, 2]] = 1
+                    try:  # try to avoid issues in case the neighboring cell does not exist
+                        if not mask[a[p] + lattice.stencil.e[i, 0], b[p] + lattice.stencil.e[i, 1], c[p] + lattice.stencil.e[i, 2]]:
+                            self.mask[j, a[p] + lattice.stencil.e[i, 0], b[p] + lattice.stencil.e[i, 1], c[p] + lattice.stencil.e[i, 2]] = 1
+                    except IndexError:
+                        pass  # passing when trying to read and write to index outside the domain
 
         self.mask = self.lattice.convert_to_tensor(self.mask)
 
@@ -70,6 +76,7 @@ class HalfWayBounceBackBoundary:
         return f
 
     def make_no_stream_mask(self, f_shape):
+        assert self.obstacle.shape == f_shape[1:]
         return self.obstacle | self.mask
 
     def make_no_collision_mask(self, f_shape):
