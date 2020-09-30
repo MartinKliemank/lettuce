@@ -101,7 +101,8 @@ class HalfWayBounceBackWall:
         self.lattice = lattice
         direction = np.array(direction)
 
-        velocities = np.concatenate(np.argwhere(np.matmul(self.lattice.stencil.e, direction) > 1 - 1e-6), axis=0) # -> bouncedFs, weil das bei ABB ja die sind, die weg zeigen von der Wand, also neu berechnet werden
+        # select velocities to be bounced (the ones pointing in "direction")
+        velocities = np.concatenate(np.argwhere(np.matmul(self.lattice.stencil.e, direction) > 1 - 1e-6), axis=0)
         index = []
         for i in direction:
             if i == 0:
@@ -111,17 +112,17 @@ class HalfWayBounceBackWall:
             if i == -1:
                 index.append(0)
 
-        self.index = [np.array(self.lattice.stencil.opposite)[velocities]] + index
-        self.masked = [velocities] + index
-        print("halt stop")
+        self.bounced = [np.array(self.lattice.stencil.opposite)[velocities]] + index
+        self.outgoing = [velocities] + index
 
     def __call__(self, f):
-        f[self.index] = f[self.masked]
+        #does this work?
+        f[self.bounced] = f[self.outgoing]
         return f
 
     def make_no_stream_mask(self, f_shape):
         mask = np.zeros(f_shape, dtype=bool)
-        mask[tuple(self.masked)] = 1
+        mask[tuple(self.bounced)] = 1
         mask = self.lattice.convert_to_tensor(mask)
         return mask
 
