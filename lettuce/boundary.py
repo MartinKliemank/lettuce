@@ -18,9 +18,11 @@ The no-collision mask has the same dimensions as the grid (x, y, (z)).
 import torch
 import numpy as np
 from lettuce import (LettuceException)
+import matplotlib.pyplot as plt
 
 
-__all__ = ["BounceBackBoundary", "AntiBounceBackOutlet", "EquilibriumBoundaryPU", "EquilibriumOutletP"]
+__all__ = ["BounceBackBoundary", "AntiBounceBackOutlet", "EquilibriumBoundaryPU", "EquilibriumOutletP",
+           "HalfWayBounceBackObject", "HalfWayBounceBackWall"]
 
 
 class BounceBackBoundary:
@@ -38,50 +40,91 @@ class BounceBackBoundary:
         return self.mask
 
 
-class HalfWayBounceBackBoundary:
-
+class HalfWayBounceBackObject:
+    """Halfway Bounce-Back Boundary around object mask"""
     def __init__(self, mask, lattice):
         self.obstacle = lattice.convert_to_tensor(mask)
         self.lattice = lattice
-
+        """make masks for fs to be bounced / not streamed by going over all obstacle points and 
+        following all e_i's to find neighboring points and which of their fs point towards the obstacle 
+        (fs pointing to obstacle are added to no_stream_mask, fs pointing away are added to bouncedFs)"""
         if lattice.D == 2:
             x, y = mask.shape
-            self.mask = np.zeros((lattice.Q, x, y), dtype=bool)
+            #self.mask = np.zeros((lattice.Q, x, y), dtype=bool)
+            self.bouncedFs = np.zeros((lattice.Q, x, y), dtype=bool)
             a, b = np.where(mask)
             for p in range(0, len(a)):
-                for j in range(0, lattice.Q):
-                    i = lattice.stencil.opposite[j]
-                    try:  # try to avoid issues in case the neighboring cell does not exist
+                for i in range(0, lattice.Q):
+                    try:  # try in case the neighboring cell does not exist (an f pointing out of simulation domain)
                         if not mask[a[p] + lattice.stencil.e[i, 0], b[p] + lattice.stencil.e[i, 1]]:
-                            self.mask[j, a[p] + lattice.stencil.e[i, 0], b[p] + lattice.stencil.e[i, 1]] = 1
+                            #self.mask[lattice.stencil.opposite[i], a[p] + lattice.stencil.e[i, 0], b[p] + lattice.stencil.e[i, 1]] = 1
+                            self.bouncedFs[i, a[p] + lattice.stencil.e[i, 0], b[p] + lattice.stencil.e[i, 1]] = 1
                     except IndexError:
-                        pass  # passing when trying to read and write to index outside the domain
-        elif lattice.D == 3:
+                        pass  # just ignore this iteration since there is no neighbor there
+        if lattice.D == 3:
             x, y, z = mask.shape
-            self.mask = np.zeros((lattice.Q, x, y, z), dtype=bool)
+            #self.mask = np.zeros((lattice.Q, x, y, z), dtype=bool)
+            self.bouncedFs = np.zeros((lattice.Q, x, y, z), dtype=bool)
             a, b, c = np.where(mask)
             for p in range(0, len(a)):
-                for j in range(0, lattice.Q):
-                    i = lattice.stencil.opposite[j]
-                    try:  # try to avoid issues in case the neighboring cell does not exist
+                for i in range(0, lattice.Q):
+                    try:  # try in case the neighboring cell does not exist (an f pointing out of simulation domain)
                         if not mask[a[p] + lattice.stencil.e[i, 0], b[p] + lattice.stencil.e[i, 1], c[p] + lattice.stencil.e[i, 2]]:
-                            self.mask[j, a[p] + lattice.stencil.e[i, 0], b[p] + lattice.stencil.e[i, 1], c[p] + lattice.stencil.e[i, 2]] = 1
+                            #self.mask[lattice.stencil.opposite[i], a[p] + lattice.stencil.e[i, 0], b[p] + lattice.stencil.e[i, 1], c[p] + lattice.stencil.e[i, 2]] = 1
+                            self.bouncedFs[i, a[p] + lattice.stencil.e[i, 0], b[p] + lattice.stencil.e[i, 1], c[p] + lattice.stencil.e[i, 2]] = 1
                     except IndexError:
-                        pass  # passing when trying to read and write to index outside the domain
+                        pass  # just ignore this iteration since there is no neighbor there
 
-        self.mask = self.lattice.convert_to_tensor(self.mask)
+        #self.mask = self.lattice.convert_to_tensor(self.mask)
+        self.bouncedFs = self.lattice.convert_to_tensor(self.bouncedFs)
 
     def __call__(self, f):
-        f = torch.where(self.mask, f[self.lattice.stencil.opposite], f)
+        f = torch.where(self.bouncedFs, f[self.lattice.stencil.opposite], f)
         return f
+
+    def postStreamOutput(self, f):
+        later = torch.zeros_like(f)
+        later = torch.where(self.bouncedFs, f[self.lattice.stencil.opposite], later)
+        return later
 
     def make_no_stream_mask(self, f_shape):
         assert self.obstacle.shape == f_shape[1:]
-        return self.obstacle | self.mask
+        return self.obstacle | self.bouncedFs
 
     def make_no_collision_mask(self, f_shape):
         assert self.obstacle.shape == f_shape[1:]
         return self.obstacle
+
+class HalfWayBounceBackWall:
+    """Halfway Bounce-Back Boundary on side of the domain (0 thickness)"""
+    def __init__(self, direction, lattice):
+        self.lattice = lattice
+        direction = np.array(direction)
+
+        velocities = np.concatenate(np.argwhere(np.matmul(self.lattice.stencil.e, direction) > 1 - 1e-6), axis=0) # -> bouncedFs, weil das bei ABB ja die sind, die weg zeigen von der Wand, also neu berechnet werden
+        index = []
+        for i in direction:
+            if i == 0:
+                index.append(slice(None))
+            if i == 1:
+                index.append(-1)
+            if i == -1:
+                index.append(0)
+
+        self.index = [np.array(self.lattice.stencil.opposite)[velocities]] + index
+        self.masked = [velocities] + index
+        print("halt stop")
+
+    def __call__(self, f):
+        f[self.index] = f[self.masked]
+        return f
+
+    def make_no_stream_mask(self, f_shape):
+        mask = np.zeros(f_shape, dtype=bool)
+        mask[tuple(self.masked)] = 1
+        mask = self.lattice.convert_to_tensor(mask)
+        return mask
+
 
 class EquilibriumBoundaryPU:
     """Sets distributions on this boundary to equilibrium with predefined velocity and pressure.
@@ -155,6 +198,17 @@ class AntiBounceBackOutlet:
              - (torch.norm(u_w,dim=0) / self.lattice.cs) ** 2)
         )
         return f
+
+    def postStreamOutput(self, f):
+        later = torch.zeros_like(f)
+        u = self.lattice.u(f)
+        u_w = u[[slice(None)] + self.index] + 0.5 * (u[[slice(None)] + self.index] - u[[slice(None)] + self.neighbor])
+        later[[np.array(self.lattice.stencil.opposite)[self.velocities]] + self.index] = (
+            - f[[self.velocities] + self.index] + self.w * self.lattice.rho(f)[[slice(None)] + self.index] *
+            (2 + torch.einsum(self.dims, self.lattice.e[self.velocities], u_w) ** 2 / self.lattice.cs ** 4
+             - (torch.norm(u_w,dim=0) / self.lattice.cs) ** 2)
+        )
+        return later
 
     def make_no_stream_mask(self, f_shape):
         no_stream_mask = torch.zeros(size=f_shape, dtype=torch.bool, device=self.lattice.device)
