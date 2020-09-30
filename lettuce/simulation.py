@@ -2,7 +2,7 @@
 
 from timeit import default_timer as timer
 from lettuce import (
-    LettuceException, get_default_moment_transform, BGKInitialization, ExperimentalWarning, torch_gradient
+    LettuceException, get_default_moment_transform, BGKInitialization, ExperimentalWarning, torch_gradient, HalfWayBounceBackObject, AntiBounceBackOutlet
 )
 from lettuce.util import pressure_poisson
 import pickle
@@ -61,6 +61,11 @@ class Simulation:
         if no_stream_mask.any():
             self.streaming.no_stream_mask = no_stream_mask
 
+        self.save = []
+        for o in range(0, 4):
+            self.save.append(torch.zeros_like(self.f))
+        self.save2 = torch.zeros_like(self.f)
+
     def step(self, num_steps):
         """Take num_steps stream-and-collision steps and return performance in MLUPS."""
         start = timer()
@@ -69,10 +74,18 @@ class Simulation:
         for _ in range(num_steps):
             self.i += 1
             self.f = self.streaming(self.f)
+            #for o in range(0, 4):
+            #    self.f = torch.where(self.save[o] == 0, self.f, self.save[o])
+            self.f = torch.where(self.save2 == 0, self.f, self.save2)
             #Perform the collision routine everywhere, expect where the no_collision_mask is true
             self.f = torch.where(self.no_collision_mask, self.f, self.collision(self.f))
+            bcnt = 0
             for boundary in self._boundaries:
-                self.f = boundary(self.f)
+                if isinstance(boundary, HalfWayBounceBackObject): #or isinstance(boundary, AntiBounceBackOutlet):
+                    self.save2 = boundary.postStreamOutput(self.f)
+                    bcnt += 1
+                else:
+                    self.f = boundary(self.f)
             self._report()
         end = timer()
         seconds = end-start

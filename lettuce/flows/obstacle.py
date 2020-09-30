@@ -1,6 +1,6 @@
 import numpy as np
 from lettuce.unit import UnitConversion
-from lettuce.boundary import EquilibriumBoundaryPU, BounceBackBoundary, AntiBounceBackOutlet
+from lettuce.boundary import EquilibriumBoundaryPU, BounceBackBoundary, AntiBounceBackOutlet, HalfWayBounceBackWall, HalfWayBounceBackObject
 
 
 class Obstacle2D(object):
@@ -84,7 +84,7 @@ class Obstacle2D(object):
                 np.array([self.units.characteristic_velocity_pu, 0])
             ),
             AntiBounceBackOutlet(self.units.lattice, [1, 0]),
-            BounceBackBoundary(self.mask, self.units.lattice)
+            HalfWayBounceBackObject(self.mask, self.units.lattice)
         ]
 
 
@@ -132,4 +132,4 @@ class Obstacle3D(object):
         return [EquilibriumBoundaryPU(np.abs(x) < 1e-6, self.units.lattice, self.units,
                                       np.array([self.units.characteristic_velocity_pu, 0, 0])),
                 AntiBounceBackOutlet(self.units.lattice, [1, 0, 0]),
-                BounceBackBoundary(self.mask, self.units.lattice)]
+                HalfWayBounceBackObject(self.mask, self.units.lattice)]
