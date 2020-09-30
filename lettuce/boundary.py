@@ -50,32 +50,27 @@ class HalfWayBounceBackObject:
         (fs pointing to obstacle are added to no_stream_mask, fs pointing away are added to bouncedFs)"""
         if lattice.D == 2:
             x, y = mask.shape
-            #self.mask = np.zeros((lattice.Q, x, y), dtype=bool)
             self.bouncedFs = np.zeros((lattice.Q, x, y), dtype=bool)
             a, b = np.where(mask)
             for p in range(0, len(a)):
                 for i in range(0, lattice.Q):
                     try:  # try in case the neighboring cell does not exist (an f pointing out of simulation domain)
                         if not mask[a[p] + lattice.stencil.e[i, 0], b[p] + lattice.stencil.e[i, 1]]:
-                            #self.mask[lattice.stencil.opposite[i], a[p] + lattice.stencil.e[i, 0], b[p] + lattice.stencil.e[i, 1]] = 1
                             self.bouncedFs[i, a[p] + lattice.stencil.e[i, 0], b[p] + lattice.stencil.e[i, 1]] = 1
                     except IndexError:
                         pass  # just ignore this iteration since there is no neighbor there
         if lattice.D == 3:
             x, y, z = mask.shape
-            #self.mask = np.zeros((lattice.Q, x, y, z), dtype=bool)
             self.bouncedFs = np.zeros((lattice.Q, x, y, z), dtype=bool)
             a, b, c = np.where(mask)
             for p in range(0, len(a)):
                 for i in range(0, lattice.Q):
                     try:  # try in case the neighboring cell does not exist (an f pointing out of simulation domain)
                         if not mask[a[p] + lattice.stencil.e[i, 0], b[p] + lattice.stencil.e[i, 1], c[p] + lattice.stencil.e[i, 2]]:
-                            #self.mask[lattice.stencil.opposite[i], a[p] + lattice.stencil.e[i, 0], b[p] + lattice.stencil.e[i, 1], c[p] + lattice.stencil.e[i, 2]] = 1
                             self.bouncedFs[i, a[p] + lattice.stencil.e[i, 0], b[p] + lattice.stencil.e[i, 1], c[p] + lattice.stencil.e[i, 2]] = 1
                     except IndexError:
                         pass  # just ignore this iteration since there is no neighbor there
 
-        #self.mask = self.lattice.convert_to_tensor(self.mask)
         self.bouncedFs = self.lattice.convert_to_tensor(self.bouncedFs)
 
     def __call__(self, f):
