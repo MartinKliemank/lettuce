@@ -102,6 +102,11 @@ class UnitConversion:
     def convert_length_to_lu(self, length_pu):
         return length_pu * self.characteristic_length_lu / self.characteristic_length_pu
 
+    def convert_force_to_pu(self, force_lu):
+        return (force_lu * (self.characteristic_density_pu/self.characteristic_density_lu) *
+                           (self.characteristic_velocity_pu/self.characteristic_velocity_lu)**2 *
+                           (self.characteristic_length_pu/self.characteristic_length_lu)**2)
+
     def convert_energy_to_pu(self, energy_lu):
         """Energy is defined here in units of [density * velocity**2]"""
         return (

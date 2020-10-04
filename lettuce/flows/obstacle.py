@@ -17,6 +17,8 @@ class Obstacle2D(object):
         Grid resolution in spanwise direction.
     char_length_lu : float
         The characteristic length in lattice units; usually the number of grid points for the obstacle in flow direction
+    area: float
+        The cross sectional area (seen in flow direction) of the obstacle for drag calculation (width (*height) in LU)
 
     Attributes
     ----------
@@ -43,9 +45,10 @@ class Obstacle2D(object):
     >>> condition = np.sqrt((x-25)**2+(y-25)**2) < 5.0001
     >>> flow.mask[np.where(condition)] = 1
    """
-    def __init__(self, resolution_x, resolution_y, reynolds_number, mach_number, lattice, char_length_lu):
+    def __init__(self, resolution_x, resolution_y, reynolds_number, mach_number, lattice, char_length_lu, area_lu=0):
         self.resolution_x = resolution_x
         self.resolution_y = resolution_y
+        self.area_lu = area_lu
         self.units = UnitConversion(
             lattice,
             reynolds_number=reynolds_number, mach_number=mach_number,
@@ -87,15 +90,24 @@ class Obstacle2D(object):
             HalfWayBounceBackObject(self.mask, self.units.lattice)
         ]
 
+    @property
+    def area(self):
+        return self.units.convert_length_to_pu(self.area_lu)
+
+    @area.setter
+    def area(self, A):
+        self.area_lu = A
+
 
 class Obstacle3D(object):
     """Flow class to simulate the flow around an object (mask) in 3D.
     See documentation for :class:`~Obstacle2D` for details.
     """
-    def __init__(self, resolution_x, resolution_y, resolution_z, reynolds_number, mach_number, lattice, char_length_lu):
+    def __init__(self, resolution_x, resolution_y, resolution_z, reynolds_number, mach_number, lattice, char_length_lu, area_lu=0):
         self.resolution_x = resolution_x
         self.resolution_y = resolution_y
         self.resolution_z = resolution_z
+        self.area_lu = area_lu
         self.units = UnitConversion(
             lattice,
             reynolds_number=reynolds_number, mach_number=mach_number,
@@ -132,4 +144,12 @@ class Obstacle3D(object):
         return [EquilibriumBoundaryPU(np.abs(x) < 1e-6, self.units.lattice, self.units,
                                       np.array([self.units.characteristic_velocity_pu, 0, 0])),
                 AntiBounceBackOutlet(self.units.lattice, [1, 0, 0]),
-                HalfWayBounceBackObject(self.mask, self.units.lattice)]
+                BounceBackBoundary(self.mask, self.units.lattice)]
+
+    @property
+    def area(self):
+        return self.units.convert_length_to_pu(self.units.convert_length_to_pu(self.area_lu))
+
+    @area.setter
+    def area(self, A):
+        self.area_lu = A

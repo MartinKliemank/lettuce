@@ -18,7 +18,6 @@ The no-collision mask has the same dimensions as the grid (x, y, (z)).
 import torch
 import numpy as np
 from lettuce import (LettuceException)
-import matplotlib.pyplot as plt
 
 
 __all__ = ["BounceBackBoundary", "AntiBounceBackOutlet", "EquilibriumBoundaryPU", "EquilibriumOutletP",
@@ -50,41 +49,45 @@ class HalfWayBounceBackObject:
         (fs pointing to obstacle are added to no_stream_mask, fs pointing away are added to bouncedFs)"""
         if lattice.D == 2:
             x, y = mask.shape
-            self.bouncedFs = np.zeros((lattice.Q, x, y), dtype=bool)
+            self.mask = np.zeros((lattice.Q, x, y), dtype=bool)
             a, b = np.where(mask)
             for p in range(0, len(a)):
                 for i in range(0, lattice.Q):
                     try:  # try in case the neighboring cell does not exist (an f pointing out of simulation domain)
                         if not mask[a[p] + lattice.stencil.e[i, 0], b[p] + lattice.stencil.e[i, 1]]:
-                            self.bouncedFs[i, a[p] + lattice.stencil.e[i, 0], b[p] + lattice.stencil.e[i, 1]] = 1
+                            self.mask[i, a[p] + lattice.stencil.e[i, 0], b[p] + lattice.stencil.e[i, 1]] = 1
                     except IndexError:
                         pass  # just ignore this iteration since there is no neighbor there
         if lattice.D == 3:
             x, y, z = mask.shape
-            self.bouncedFs = np.zeros((lattice.Q, x, y, z), dtype=bool)
+            self.mask = np.zeros((lattice.Q, x, y, z), dtype=bool)
             a, b, c = np.where(mask)
             for p in range(0, len(a)):
                 for i in range(0, lattice.Q):
                     try:  # try in case the neighboring cell does not exist (an f pointing out of simulation domain)
                         if not mask[a[p] + lattice.stencil.e[i, 0], b[p] + lattice.stencil.e[i, 1], c[p] + lattice.stencil.e[i, 2]]:
-                            self.bouncedFs[i, a[p] + lattice.stencil.e[i, 0], b[p] + lattice.stencil.e[i, 1], c[p] + lattice.stencil.e[i, 2]] = 1
+                            self.mask[i, a[p] + lattice.stencil.e[i, 0], b[p] + lattice.stencil.e[i, 1], c[p] + lattice.stencil.e[i, 2]] = 1
                     except IndexError:
                         pass  # just ignore this iteration since there is no neighbor there
 
-        self.bouncedFs = self.lattice.convert_to_tensor(self.bouncedFs)
+        self.mask = self.lattice.convert_to_tensor(self.mask)
 
     def __call__(self, f):
-        f = torch.where(self.bouncedFs, f[self.lattice.stencil.opposite], f)
+        f = torch.where(self.mask, f[self.lattice.stencil.opposite], f)
         return f
 
     def postStreamOutput(self, f):
         later = torch.zeros_like(f)
-        later = torch.where(self.bouncedFs, f[self.lattice.stencil.opposite], later)
+        later = torch.where(self.mask, f[self.lattice.stencil.opposite], later)
         return later
+
+    def postStreamBoundary(self, f_old, f):
+        f = torch.where(self.mask, f_old[self.lattice.stencil.opposite], f)
+        return f
 
     def make_no_stream_mask(self, f_shape):
         assert self.obstacle.shape == f_shape[1:]
-        return self.obstacle | self.bouncedFs
+        return self.obstacle | self.mask
 
     def make_no_collision_mask(self, f_shape):
         assert self.obstacle.shape == f_shape[1:]

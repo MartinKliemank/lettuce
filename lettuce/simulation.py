@@ -65,6 +65,7 @@ class Simulation:
         for o in range(0, 4):
             self.save.append(torch.zeros_like(self.f))
         self.save2 = torch.zeros_like(self.f)
+        self.f_old = torch.zeros_like(self.f)
 
     def step(self, num_steps):
         """Take num_steps stream-and-collision steps and return performance in MLUPS."""
@@ -76,17 +77,28 @@ class Simulation:
             self.f = self.streaming(self.f)
             #for o in range(0, 4):
             #    self.f = torch.where(self.save[o] == 0, self.f, self.save[o])
-            self.f = torch.where(self.save2 == 0, self.f, self.save2)
+            #self.f = torch.where(self.save2 == 0, self.f, self.save2)
+
+            for boundary in self._boundaries:
+                if isinstance(boundary, HalfWayBounceBackObject) and self.i > 0:
+                    self.f = boundary.postStreamBoundary(self.f_old, self.f)
             #Perform the collision routine everywhere, expect where the no_collision_mask is true
             self.f = torch.where(self.no_collision_mask, self.f, self.collision(self.f))
             bcnt = 0
             for boundary in self._boundaries:
                 if isinstance(boundary, HalfWayBounceBackObject): #or isinstance(boundary, AntiBounceBackOutlet):
-                    self.save2 = boundary.postStreamOutput(self.f)
+            #        self.save2 = boundary.postStreamOutput(self.f)
                     bcnt += 1
                 else:
                     self.f = boundary(self.f)
+            self.f_old = self.f
             self._report()
+            if 0:
+                print("----------{}----------".format(self.i))
+                for o in range(0, self.lattice.Q):
+                    index = np.where(np.abs(self.f.cpu().numpy()[o, :, :]) == np.max(np.abs(self.f.cpu().numpy()[o, :, :])))
+                    index = list(zip(index[0], index[1]))
+                    print("{}: {}".format(o, index))
         end = timer()
         seconds = end-start
         num_grid_points = self.lattice.rho(self.f).numel()
