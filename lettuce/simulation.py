@@ -61,10 +61,6 @@ class Simulation:
         if no_stream_mask.any():
             self.streaming.no_stream_mask = no_stream_mask
 
-        self.save = []
-        for o in range(0, 4):
-            self.save.append(torch.zeros_like(self.f))
-        self.save2 = torch.zeros_like(self.f)
         self.f_old = torch.zeros_like(self.f)
 
     def step(self, num_steps):
@@ -75,21 +71,13 @@ class Simulation:
         for _ in range(num_steps):
             self.i += 1
             self.f = self.streaming(self.f)
-            #for o in range(0, 4):
-            #    self.f = torch.where(self.save[o] == 0, self.f, self.save[o])
-            #self.f = torch.where(self.save2 == 0, self.f, self.save2)
-
             for boundary in self._boundaries:
                 if isinstance(boundary, HalfWayBounceBackObject) and self.i > 0:
                     self.f = boundary.postStreamBoundary(self.f_old, self.f)
             #Perform the collision routine everywhere, expect where the no_collision_mask is true
             self.f = torch.where(self.no_collision_mask, self.f, self.collision(self.f))
-            bcnt = 0
             for boundary in self._boundaries:
-                if isinstance(boundary, HalfWayBounceBackObject): #or isinstance(boundary, AntiBounceBackOutlet):
-            #        self.save2 = boundary.postStreamOutput(self.f)
-                    bcnt += 1
-                else:
+                if not isinstance(boundary, HalfWayBounceBackObject): #or isinstance(boundary, AntiBounceBackOutlet):
                     self.f = boundary(self.f)
             self.f_old = self.f
             self._report()

@@ -87,12 +87,12 @@ class Obstacle2D(object):
                 np.array([self.units.characteristic_velocity_pu, 0])
             ),
             AntiBounceBackOutlet(self.units.lattice, [1, 0]),
-            HalfWayBounceBackObject(self.mask, self.units.lattice)
+            BounceBackBoundary(self.mask, self.units.lattice)
         ]
 
     @property
     def area(self):
-        return self.units.convert_length_to_pu(self.area_lu)
+        return self.area_lu
 
     @area.setter
     def area(self, A):
@@ -148,7 +148,7 @@ class Obstacle3D(object):
 
     @property
     def area(self):
-        return self.units.convert_length_to_pu(self.units.convert_length_to_pu(self.area_lu))
+        return self.area_lu
 
     @area.setter
     def area(self, A):
