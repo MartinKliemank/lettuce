@@ -64,7 +64,7 @@ class BounceBackBoundary:
             tmp = torch.einsum("i..., id -> d...", tmp, self.lattice.e)
             for _ in range(0, self.lattice.D):
                 tmp = torch.sum(tmp, dim=1)
-            self.force = 2 * tmp
+            self.force = tmp * 2
         f = torch.where(self.mask, f[self.lattice.stencil.opposite], f)
         return f
 
@@ -111,8 +111,8 @@ class HalfWayBounceBackObject:
     def __call__(self, f):
         f = torch.where(self.mask, f[self.lattice.stencil.opposite], f)
         if self.output_force:
-            tmp = torch.where(self.mask[self.lattice.stencil.opposite], f, torch.zeros_like(f))
-            tmp = torch.einsum("i..., id -> d...", tmp, self.lattice.e)
+            tmp = torch.where(self.mask, f, torch.zeros_like(f))
+            tmp = torch.einsum("i..., id -> d...", tmp, self.lattice.e[self.lattice.stencil.opposite])
             for _ in range(0, self.lattice.D):
                 tmp = torch.sum(tmp, dim=1)
             self.force = 2 * tmp
@@ -122,12 +122,12 @@ class HalfWayBounceBackObject:
     def postStreamBoundary(self, f_old, f):
         f = torch.where(self.mask, f_old[self.lattice.stencil.opposite], f)
         if self.output_force:
-            tmp = torch.where(self.mask[self.lattice.stencil.opposite], f_old, torch.zeros_like(f))
-            tmp = torch.einsum("i..., id -> d...", tmp, self.lattice.e)
+            tmp = torch.where(self.mask, f, torch.zeros_like(f))
+            tmp = torch.einsum("i..., id -> d...", tmp, self.lattice.e[self.lattice.stencil.opposite])
             for _ in range(0, self.lattice.D):
                 tmp = torch.sum(tmp, dim=1)
             self.force = 2 * tmp
-            #self.force = 1 ** self.lattice.D * 2 * torch.einsum('ixy, id -> d', sum, self.lattice.e) / 1.0
+            # self.force = 1 ** self.lattice.D * 2 * torch.einsum('ixy, id -> d', sum, self.lattice.e) / 1.0
         return f
 
     def make_no_stream_mask(self, f_shape):

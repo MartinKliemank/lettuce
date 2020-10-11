@@ -61,8 +61,6 @@ class Simulation:
         if no_stream_mask.any():
             self.streaming.no_stream_mask = no_stream_mask
 
-        self.f_old = torch.zeros_like(self.f)
-
     def step(self, num_steps):
         """Take num_steps stream-and-collision steps and return performance in MLUPS."""
         start = timer()
@@ -72,14 +70,14 @@ class Simulation:
             self.i += 1
             self.f = self.streaming(self.f)
             for boundary in self._boundaries:
-                if isinstance(boundary, HalfWayBounceBackObject) and self.i > 0:
+                if isinstance(boundary, HalfWayBounceBackObject) and self.i > 1:
                     self.f = boundary.postStreamBoundary(self.f_old, self.f)
             #Perform the collision routine everywhere, expect where the no_collision_mask is true
             self.f = torch.where(self.no_collision_mask, self.f, self.collision(self.f))
             for boundary in self._boundaries:
                 if not isinstance(boundary, HalfWayBounceBackObject): #or isinstance(boundary, AntiBounceBackOutlet):
                     self.f = boundary(self.f)
-            self.f_old = self.f
+            self.f_old = deepcopy(self.f)
             self._report()
             if 0:
                 print("----------{}----------".format(self.i))
