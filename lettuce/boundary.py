@@ -149,3 +149,67 @@ class EquilibriumOutletP(AntiBounceBackOutlet):
         no_collision_mask = torch.zeros(size=f_shape[1:], dtype=torch.bool, device=self.lattice.device)
         no_collision_mask[self.index] = 1
         return no_collision_mask
+
+class GradBoundary:
+
+    def __init__(self, mask, lattice):
+        self.obstacle = lattice.convert_to_tensor(mask)
+        self.lattice = lattice
+        self.output_force = False
+        self.force = torch.zeros_like(self.lattice.convert_to_tensor(self.lattice.stencil.e[0]))
+        """make masks for fs to be bounced / not streamed by going over all obstacle points and 
+        following all e_i's to find neighboring points and which of their fs point towards the obstacle 
+        (fs pointing to obstacle are added to no_stream_mask, fs pointing away are added to bouncedFs)"""
+        if lattice.D == 2:
+            x, y = mask.shape
+            self.mask = np.zeros((lattice.Q, x, y), dtype=bool)
+            a, b = np.where(mask)
+            for p in range(0, len(a)):
+                for i in range(0, lattice.Q):
+                    try:  # try in case the neighboring cell does not exist (an f pointing out of simulation domain)
+                        if not mask[a[p] + lattice.stencil.e[i, 0], b[p] + lattice.stencil.e[i, 1]]:
+                            self.mask[i, a[p] + lattice.stencil.e[i, 0], b[p] + lattice.stencil.e[i, 1]] = 1
+                    except IndexError:
+                        pass  # just ignore this iteration since there is no neighbor there
+        if lattice.D == 3:
+            x, y, z = mask.shape
+            self.mask = np.zeros((lattice.Q, x, y, z), dtype=bool)
+            a, b, c = np.where(mask)
+            for p in range(0, len(a)):
+                for i in range(0, lattice.Q):
+                    try:  # try in case the neighboring cell does not exist (an f pointing out of simulation domain)
+                        if not mask[a[p] + lattice.stencil.e[i, 0], b[p] + lattice.stencil.e[i, 1], c[p] + lattice.stencil.e[i, 2]]:
+                            self.mask[i, a[p] + lattice.stencil.e[i, 0], b[p] + lattice.stencil.e[i, 1], c[p] + lattice.stencil.e[i, 2]] = 1
+                    except IndexError:
+                        pass  # just ignore this iteration since there is no neighbor there
+
+        self.mask = self.lattice.convert_to_tensor(self.mask)
+
+    def __call__(self, f):
+        #f = torch.where(self.mask, f[self.lattice.stencil.opposite], f)
+        #if self.output_force:
+        #    tmp = torch.where(self.mask, f, torch.zeros_like(f))
+        #    tmp = torch.einsum("i..., id -> d...", tmp, self.lattice.e[self.lattice.stencil.opposite])
+        #    for _ in range(0, self.lattice.D):
+        #        tmp = torch.sum(tmp, dim=1)
+        #    self.force = 2 * tmp
+            # self.force = 1 ** self.lattice.D * 2 * torch.einsum('ixy, id -> d', sum, self.lattice.e) / 1.0
+        return f
+
+    def postStreamBoundary(self, f_old, f):
+        rho = self.lattice.rho(f_old)
+        u = self.lattice.u(f_old)
+        rhou = self.lattice.j(f_old)
+        PIeq = j ox u + rho * self.lattice.cs**2 * torch.eye(size?!)
+        PIneq =
+        PI = PIeq + PIneq
+        f = w_i * (rho + rho / self.lattice.cs**2 * torch.einsum('d..., d -> ...', u, c[i]) c_i * u + 1/(2*self.lattice.cs**4) * (PI - rho * self.lattice.cs**2 * torch.eye(size?!)) :
+        return f
+
+    def make_no_stream_mask(self, f_shape):
+        assert self.obstacle.shape == f_shape[1:]
+        return self.obstacle | self.mask
+
+    def kronecker(self, A, B):
+        return torch.einsum("ab,cd->acbd", A, B).view(A.size(0) * B.size(0), A.size(1) * B.size(1))
+
