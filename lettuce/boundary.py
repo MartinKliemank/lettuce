@@ -17,7 +17,7 @@ The no-collision mask has the same dimensions as the grid (x, y, (z)).
 
 import torch
 import numpy as np
-from lettuce import (LettuceException)
+from lettuce import (LettuceException, torch_gradient)
 
 
 __all__ = ["BounceBackBoundary", "AntiBounceBackOutlet", "EquilibriumBoundaryPU", "EquilibriumOutletP"]
@@ -152,7 +152,9 @@ class EquilibriumOutletP(AntiBounceBackOutlet):
 
 class GradBoundary:
 
-    def __init__(self, mask, lattice):
+    def __init__(self, mask, lattice, tau):
+        self.relaxation_parameter_lu = tau
+
         self.obstacle = lattice.convert_to_tensor(mask)
         self.lattice = lattice
         self.output_force = False
@@ -185,6 +187,9 @@ class GradBoundary:
 
         self.mask = self.lattice.convert_to_tensor(self.mask)
 
+    def kronecker(self, A, B):
+        return torch.einsum("ab,cd->acbd", A, B).view(A.size(0) * B.size(0), A.size(1) * B.size(1))
+
     def __call__(self, f):
         #f = torch.where(self.mask, f[self.lattice.stencil.opposite], f)
         #if self.output_force:
@@ -199,17 +204,20 @@ class GradBoundary:
     def postStreamBoundary(self, f_old, f):
         rho = self.lattice.rho(f_old)
         u = self.lattice.u(f_old)
-        rhou = self.lattice.j(f_old)
-        PIeq = j ox u + rho * self.lattice.cs**2 * torch.eye(size?!)
-        PIneq =
-        PI = PIeq + PIneq
-        f = w_i * (rho + rho / self.lattice.cs**2 * torch.einsum('d..., d -> ...', u, c[i]) c_i * u + 1/(2*self.lattice.cs**4) * (PI - rho * self.lattice.cs**2 * torch.eye(size?!)) :
+        j = self.lattice.j(f_old)
+
+        for point in u:
+            PIeq = self.kronecker(j[point], u[point]) + rho[point] * self.lattice.cs ** 2 * torch.eye(self.lattice.D)
+            PIneq = - rho[point] * self.relaxation_parameter_lu * self.lattice.cs**2 * (torch_gradient(u, 1)  + torch.transpose(torch_gradient(u, 1), 0, 1))
+            klammer1 = (PIeq + PIneq - rho[point] * self.lattice.cs**2 * torch.eye(self.lattice.D))
+            for i in range(1, self.lattice.Q):
+                klammer2 = self.kronecker(self.lattice.e[i], self.lattice.e[i]) - self.lattice.cs**2 * torch.eye(self.lattice.D)
+                f[i, point] = self.lattice.w[i] * (rho[point] + rho[point] / self.lattice.cs**2 * torch.einsum('d, d -> ', u[point], self.lattice.e[i]) + 1/(2*self.lattice.cs**4) * torch.einsum('..., ... -> ', klammer1, klammer2))
         return f
 
     def make_no_stream_mask(self, f_shape):
         assert self.obstacle.shape == f_shape[1:]
         return self.obstacle | self.mask
 
-    def kronecker(self, A, B):
-        return torch.einsum("ab,cd->acbd", A, B).view(A.size(0) * B.size(0), A.size(1) * B.size(1))
+
 

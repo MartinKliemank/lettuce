@@ -133,3 +133,17 @@ class Obstacle3D(object):
                                       np.array([self.units.characteristic_velocity_pu, 0, 0])),
                 AntiBounceBackOutlet(self.units.lattice, [1, 0, 0]),
                 BounceBackBoundary(self.mask, self.units.lattice)]
+
+    def house(self, o, length_eg, width_eg, height_eg, length_roof, width_roof, angle):
+        mask = np.zeros_like(self.grid[0], dtype=bool)
+        mask = np.where(np.logical_and(
+            np.logical_and(np.logical_and(o[0] - length_eg / 2 < self.grid[0], self.grid[0] < o[0] + length_eg / 2),
+                           np.logical_and(o[1] - width_eg / 2 < self.grid[1], self.grid[1] < o[1] + width_eg / 2)),
+                            np.logical_and(o[2] - width_eg / 2 < self.grid[2], self.grid[2] < o[2] + width_eg / 2)), True, False)
+        mask = np.where(np.logical_and(np.logical_and(
+                        np.logical_and(np.logical_and(o[0] - length_roof / 2 < self.grid[0], self.grid[0] < o[0] + length_roof / 2),
+                        np.logical_and(o[1] - width_roof / 2 < self.grid[1], self.grid[1] < o[1] + width_roof / 2)),
+                        np.logical_and(o[2] + height_eg < self.grid[2],
+                        self.grid[2] < o[2] + height_eg + np.tan(angle * np.pi / 180) * (self.grid[0] - o[0] + length_eg / 2))),
+                        self.grid[2] < o[2] + height_eg + np.tan(angle * np.pi / 180) * (self.grid[0] - o[0] - length_eg / 2)), True, False)
+        return self.units.lattice.convert_to_tensor(mask)
