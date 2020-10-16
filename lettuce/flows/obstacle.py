@@ -135,15 +135,15 @@ class Obstacle3D(object):
                 BounceBackBoundary(self.mask, self.units.lattice)]
 
     def house(self, o, length_eg, width_eg, height_eg, length_roof, width_roof, angle):
-        mask = np.zeros_like(self.grid[0], dtype=bool)
-        mask = np.where(np.logical_and(
+        inside_mask = np.zeros_like(self.grid[0], dtype=bool)
+        inside_mask = np.where(np.logical_and(
             np.logical_and(np.logical_and(o[0] - length_eg / 2 < self.grid[0], self.grid[0] < o[0] + length_eg / 2),
                            np.logical_and(o[1] - width_eg / 2 < self.grid[1], self.grid[1] < o[1] + width_eg / 2)),
-                            np.logical_and(o[2] - width_eg / 2 < self.grid[2], self.grid[2] < o[2] + width_eg / 2)), True, False)
-        mask = np.where(np.logical_and(np.logical_and(
+                            np.logical_and(o[2] - height_eg <= self.grid[2], self.grid[2] <= o[2] + height_eg)), True, inside_mask)
+        inside_mask = np.where(np.logical_and(np.logical_and(
                         np.logical_and(np.logical_and(o[0] - length_roof / 2 < self.grid[0], self.grid[0] < o[0] + length_roof / 2),
                         np.logical_and(o[1] - width_roof / 2 < self.grid[1], self.grid[1] < o[1] + width_roof / 2)),
                         np.logical_and(o[2] + height_eg < self.grid[2],
-                        self.grid[2] < o[2] + height_eg + np.tan(angle * np.pi / 180) * (self.grid[0] - o[0] + length_eg / 2))),
-                        self.grid[2] < o[2] + height_eg + np.tan(angle * np.pi / 180) * (self.grid[0] - o[0] - length_eg / 2)), True, False)
-        return self.units.lattice.convert_to_tensor(mask)
+                        self.grid[2] < o[2] + height_eg + 0.001 + np.tan(angle * np.pi / 180) * (self.grid[1] - o[1] + width_roof / 2))),
+                        self.grid[2] < o[2] + height_eg + 0.001 - np.tan(angle * np.pi / 180) * (self.grid[1] - o[1] - width_roof / 2)), True, inside_mask)
+        return self.units.lattice.convert_to_tensor(inside_mask)
