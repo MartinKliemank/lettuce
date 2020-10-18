@@ -146,4 +146,28 @@ class Obstacle3D(object):
                         np.logical_and(o[2] + height_eg < self.grid[2],
                         self.grid[2] < o[2] + height_eg + 0.001 + np.tan(angle * np.pi / 180) * (self.grid[1] - o[1] + width_roof / 2))),
                         self.grid[2] < o[2] + height_eg + 0.001 - np.tan(angle * np.pi / 180) * (self.grid[1] - o[1] - width_roof / 2)), True, inside_mask)
-        return self.units.lattice.convert_to_tensor(inside_mask)
+
+        """make masks for fs to be bounced / not streamed by going over all obstacle points and 
+        following all e_i's to find neighboring points and which of their fs point towards the obstacle 
+        (fs pointing to obstacle are added to no_stream_mask, fs pointing away are added to bouncedFs)"""
+
+        x, y, z = inside_mask.shape
+        outgoing_mask = np.zeros((self.units.lattice.Q, x, y, z), dtype=bool)
+        a, b, c = np.where(inside_mask)
+        for p in range(0, len(a)):
+            for i in range(0, self.units.lattice.Q):
+                try:  # try in case the neighboring cell does not exist (an f pointing out of simulation domain)
+                    if not inside_mask[a[p] + self.units.lattice.stencil.e[i, 0], b[p] + self.units.lattice.stencil.e[i, 1], c[p] + self.units.lattice.stencil.e[i, 2]]:
+                        outgoing_mask[i, a[p] + self.units.lattice.stencil.e[i, 0], b[p] + self.units.lattice.stencil.e[i, 1], c[p] + self.units.lattice.stencil.e[i, 2]] = 1
+                except IndexError:
+                    pass  # just ignore this iteration since there is no neighbor there
+
+        outgoing_coefficients = np.zeros((self.units.lattice.Q, x, y, z))
+        i, a, b, c = np.where(outgoing_mask)
+        for p in range(0, len(i)):
+            outgoing_coefficients[i[p], a[p], b[p], c[p]] = (o[2] - np.tan(angle) * width_roof/2 - c[p] + np.tan(angle) * b[p]) / (self.units.lattice.e[i[p]][2] - np.tan(angle) * self.units.lattice.e[i[p]][1])
+
+        self.outgoing_mask = self.units.lattice.convert_to_tensor(outgoing_mask)
+        self.inside_mask = self.units.lattice.convert_to_tensor(inside_mask)
+
+    def roof(self, length, width):
