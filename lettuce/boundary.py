@@ -188,7 +188,10 @@ class GradBoundary:
         self.mask = self.lattice.convert_to_tensor(self.mask)
 
     def kronecker(self, A, B):
-        return torch.einsum("ab,cd->acbd", A, B).view(A.size(0) * B.size(0), A.size(1) * B.size(1))
+        return torch.einsum("abc,def->adbecf", A, B).view(A.size(0) * B.size(0), A.size(1) * B.size(1), A.size(2) * B.size(2))
+
+    #def kronecker(self, A, B):
+    #    return torch.einsum("ab,cd->acbd", "abc,def->adbecf", A, B).view(A.size(0) * B.size(0), A.size(1) * B.size(1))
 
     def __call__(self, f):
         #f = torch.where(self.mask, f[self.lattice.stencil.opposite], f)
@@ -203,9 +206,10 @@ class GradBoundary:
 
     def postStreamBoundary(self, f_old, f):
         rho = self.lattice.rho(f_old)
-        u = self.lattice.u(f_old)
-        j = self.lattice.j(f_old)
-
+        u = self.lattice.u(f_old) #falsch
+        j = self.lattice.j(f_old) #falsch
+        # rhotarget = sum(where( outgoing_mask, f[opposite], f)
+        # utarget = where(outgoing_mask, q_i * uf_i / (1+q_i))
         for point in u:
             PIeq = self.kronecker(j[point], u[point]) + rho[point] * self.lattice.cs ** 2 * torch.eye(self.lattice.D)
             PIneq = - rho[point] * self.relaxation_parameter_lu * self.lattice.cs**2 * (torch_gradient(u, 1)  + torch.transpose(torch_gradient(u, 1), 0, 1))

@@ -1,6 +1,7 @@
 import numpy as np
 from lettuce.unit import UnitConversion
 from lettuce.boundary import EquilibriumBoundaryPU, BounceBackBoundary, AntiBounceBackOutlet
+import torch
 
 
 class Obstacle2D(object):
@@ -134,18 +135,20 @@ class Obstacle3D(object):
                 AntiBounceBackOutlet(self.units.lattice, [1, 0, 0]),
                 BounceBackBoundary(self.mask, self.units.lattice)]
 
-    def house(self, o, length_eg, width_eg, height_eg, length_roof, width_roof, angle):
+    def house(self, o, eg_length, eg_width, eg_height, roof_length, roof_width, angle):
+        o[2] = 0
+        angle = angle * np.pi / 180
         inside_mask = np.zeros_like(self.grid[0], dtype=bool)
         inside_mask = np.where(np.logical_and(
-            np.logical_and(np.logical_and(o[0] - length_eg / 2 < self.grid[0], self.grid[0] < o[0] + length_eg / 2),
-                           np.logical_and(o[1] - width_eg / 2 < self.grid[1], self.grid[1] < o[1] + width_eg / 2)),
-                            np.logical_and(o[2] - height_eg <= self.grid[2], self.grid[2] <= o[2] + height_eg)), True, inside_mask)
+            np.logical_and(np.logical_and(o[0] - eg_length / 2 < self.grid[0], self.grid[0] < o[0] + eg_length / 2),
+                           np.logical_and(o[1] - eg_width / 2 < self.grid[1], self.grid[1] < o[1] + eg_width / 2)),
+                            np.logical_and(o[2] - eg_height <= self.grid[2], self.grid[2] <= o[2] + eg_height)), True, inside_mask)
         inside_mask = np.where(np.logical_and(np.logical_and(
-                        np.logical_and(np.logical_and(o[0] - length_roof / 2 < self.grid[0], self.grid[0] < o[0] + length_roof / 2),
-                        np.logical_and(o[1] - width_roof / 2 < self.grid[1], self.grid[1] < o[1] + width_roof / 2)),
-                        np.logical_and(o[2] + height_eg < self.grid[2],
-                        self.grid[2] < o[2] + height_eg + 0.001 + np.tan(angle * np.pi / 180) * (self.grid[1] - o[1] + width_roof / 2))),
-                        self.grid[2] < o[2] + height_eg + 0.001 - np.tan(angle * np.pi / 180) * (self.grid[1] - o[1] - width_roof / 2)), True, inside_mask)
+                        np.logical_and(np.logical_and(o[0] - roof_length / 2 < self.grid[0], self.grid[0] < o[0] + roof_length / 2),
+                        np.logical_and(o[1] - roof_width / 2 < self.grid[1], self.grid[1] < o[1] + roof_width / 2)),
+                        np.logical_and(o[2] + eg_height < self.grid[2],
+                        self.grid[2] < o[2] + eg_height + 0.001 + np.tan(angle) * (self.grid[1] - o[1] + roof_width / 2))),
+                        self.grid[2] < o[2] + eg_height + 0.001 - np.tan(angle) * (self.grid[1] - o[1] - roof_width / 2)), True, inside_mask)
 
         """make masks for fs to be bounced / not streamed by going over all obstacle points and 
         following all e_i's to find neighboring points and which of their fs point towards the obstacle 
@@ -162,12 +165,56 @@ class Obstacle3D(object):
                 except IndexError:
                     pass  # just ignore this iteration since there is no neighbor there
 
+        support = [np.array(o) - np.array([eg_length, eg_width, 0]) / 2,
+                   np.array(o) + np.array([eg_length, eg_width, 0]) / 2,
+                   np.array(o) - np.array([eg_length, eg_width, 0]) / 2,
+                   np.array(o) + np.array([eg_length, eg_width, 0]) / 2,
+                   np.array(o) + np.array([roof_length, roof_width, 0]) / 2 + np.array([0, 0, eg_height]),
+                   np.array(o) - np.array([roof_length, roof_width, 0]) / 2 + np.array([0, 0, eg_height]),
+                   np.array(o) - np.array([roof_length, roof_width, 0]) / 2 + np.array([0, 0, eg_height]),
+                   np.array(o) + np.array([roof_length, roof_width, 0]) / 2 + np.array([0, 0, eg_height]),
+                   np.array(o) + np.array([0, 0, eg_height])]
+        for i in range(0, len(support)): support[i] = self.units.convert_length_to_lu(support[i])
+
+
+        opposite = [np.array(o) - np.array([eg_length, -eg_width, 0]) / 2 + np.array([0, 0, eg_height]),
+                   np.array(o) + np.array([eg_length, -eg_width, 0]) / 2 + np.array([0, 0, eg_height]),
+                   np.array(o) - np.array([eg_length, eg_width, 0]) / 2,
+                   np.array(o) - np.array([eg_length, -eg_width, 0]) / 2 + np.array([0, 0, eg_height]),
+                   np.array(o) + np.array([roof_length, roof_width, 0]) / 2 + np.array([0, 0, eg_height]),
+                   np.array(o) - np.array([roof_length, roof_width, 0]) / 2 + np.array([0, 0, eg_height]),
+                   np.array(o) - np.array([roof_length, roof_width, 0]) / 2 + np.array([0, 0, eg_height]),
+                   np.array(o) + np.array([roof_length, roof_width, 0]) / 2 + np.array([0, 0, eg_height]),
+                   np.array(o) + np.array([0, 0, eg_height])]
+
+
+        normal = [np.array([-1, 0, 0]),
+                  np.array([1, 0, 0]),
+                  np.array([0, -1, 0]),
+                  np.array([0, 1, 0]),
+                  np.array([0, 1, 0]),
+                  np.array([0, -1, 0]),
+                  np.array([-np.cos(np.pi / 2 - angle), 0, np.sin(np.pi / 2 - angle)]),
+                  np.array([np.cos(np.pi / 2 - angle), 0, np.sin(np.pi / 2 - angle)]),
+                  np.array([0, 0, 1])]
+
         outgoing_coefficients = np.zeros((self.units.lattice.Q, x, y, z))
         i, a, b, c = np.where(outgoing_mask)
+        d = np.zeros(len(support))
         for p in range(0, len(i)):
-            outgoing_coefficients[i[p], a[p], b[p], c[p]] = (o[2] - np.tan(angle) * width_roof/2 - c[p] + np.tan(angle) * b[p]) / (self.units.lattice.e[i[p]][2] - np.tan(angle) * self.units.lattice.e[i[p]][1])
+            for ebene in range(0,len(normal)):
+                d[ebene] = np.dot(normal[ebene],(np.array([a[p], b[p], c[p]]) - support[ebene])) / np.dot(normal[ebene], self.units.lattice.stencil.e[i[p], :])
+                d[ebene] = -d[ebene] / torch.norm(self.units.lattice.e[i[p]])
+            if np.count_nonzero(abs(d)<1) == 1:
+                outgoing_coefficients[i[p], a[p], b[p], c[p]] = d[abs(d)<1]
+            if np.count_nonzero(abs(d)<1) > 1: #Deal with edges!!! What if 0 / 1?
+                #for xw in d[abs(d)<1]:
+                #    for #ifs if x_w is inside the definition of one of the sides?
+                print(np.count_nonzero(abs(d)<1))
+                outgoing_coefficients[i[p], a[p], b[p], c[p]] = 100000#d[abs(d)<1]
 
+        self.outgoing_coefficients = self.units.lattice.convert_to_tensor(outgoing_coefficients)
         self.outgoing_mask = self.units.lattice.convert_to_tensor(outgoing_mask)
         self.inside_mask = self.units.lattice.convert_to_tensor(inside_mask)
 
-    def roof(self, length, width):
+        return self.inside_mask
