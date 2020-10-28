@@ -128,35 +128,5 @@ class DistributedStreaming(StandardStreaming):
                 f = torch.roll(f, shifts=tuple(self.lattice.stencil.e[i]), dims=tuple(np.arange(self.lattice.D)))
                 out.wait()
                 return f[1:-1, ...]
-            """
-            if self.rank == 0:
-                tmp = torch.cat((torch.zeros_like(f[i, 0, ...]).unsqueeze(0), f[i], torch.zeros_like(f[i, 0, ...]).unsqueeze(0)),dim=0)
-                tmp = torch.roll(tmp, shifts=tuple(self.lattice.stencil.e[i]), dims=tuple(np.arange(self.lattice.D)))
-                output = (tmp[-1, ...] if self.lattice.e[i, 0] > 0 else tmp[0, ...]).contiguous()
-                #output = (f[i, -1, ...] if self.lattice.e[i, 0] > 0 else f[i, 0, ...]).contiguous()
-                dist.send(tensor=output,
-                          dst=self.next if self.lattice.e[i, 0] > 0 else self.prev)
-    
-            # add new columns (add 1 coordinate in x at front and back of domain for in / outflow)
-            f = torch.cat((torch.zeros_like(f[i, 0, ...]).unsqueeze(0), f[i], torch.zeros_like(f[i, 0, ...]).unsqueeze(0)), dim=0)
-            # receive inflow from prev / next process into first / last column
-            input = torch.zeros_like(f[0, ...])
-            dist.recv(tensor=input.contiguous(),
-                      src=self.prev if self.lattice.e[i, 0] > 0 else self.next)
-            if self.lattice.e[i, 0] > 0:
-                f[0, ...] = input
-            else:
-                f[-1, ...] = input
-            #(f[0, ...] if self.lattice.e[i, 0] > 0 else f[-1, ...])
-            # stream normally in f, outflow ends up in added column, inflow goes into domain, is replaced by 0 in the add. column
-            f = torch.roll(f, shifts=tuple(self.lattice.stencil.e[i]), dims=tuple(np.arange(self.lattice.D)))
-            # stream out the outflow that has ended up in the overhanging column
-            if self.rank != 0:
-                output = (f[-1, ...] if self.lattice.e[i, 0] > 0 else f[0, ...]).contiguous()
-                dist.send(tensor=output,
-                          dst=self.next if self.lattice.e[i, 0] > 0 else self.prev)
-    
-            return f[1:-1, ...]
-            """
         else:
             return torch.roll(f[i], shifts=tuple(self.lattice.stencil.e[i]), dims=tuple(np.arange(self.lattice.D)))
