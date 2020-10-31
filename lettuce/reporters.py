@@ -105,7 +105,7 @@ class ErrorReporter:
             if isinstance(self.out, list):
                 self.out.append([err_u.item(), err_p.item()])
             else:
-                print(err_u.item(), err_p.item(), file=self.out)
+                print(i, err_u.item(), err_p.item(), file=self.out)
 
 
 class ObservableReporter:

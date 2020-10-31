@@ -58,8 +58,9 @@ class DistributedSimulation(Simulation):
         if no_stream_mask.any():
             self.streaming.no_stream_mask = no_stream_mask
 
+    """
     def step(self, num_steps):
-        """Take num_steps stream-and-collision steps and return performance in MLUPS."""
+        ""Take num_steps stream-and-collision steps and return performance in MLUPS.""
         start = timer()
         if self.i == 0:
             self._report()
@@ -76,7 +77,7 @@ class DistributedSimulation(Simulation):
         num_grid_points = self.lattice.rho(self.f).numel()
         mlups = num_steps * num_grid_points / 1e6 / seconds
         return mlups
-
+"""
 
 class DistributedStreaming(StandardStreaming):
     """Standard streaming for distributed simulation, domain is separated along 0th (x)-dimension"""
@@ -91,10 +92,10 @@ class DistributedStreaming(StandardStreaming):
 
 #maybe make stream only roll again and stream all I's for one direction at the same time?
     def _stream(self, f, i):
-        if self.lattice.e[i, 0] != 0:
+        if self.lattice.e[i, 0] != 0 and self.size > 1:
             if 1:
                 f = f[i]
-                output = (f[-1, ...] if self.lattice.e[i, 0] > 0 else f[0, ...]).contiguous()
+                output = (f[-1, ...] if self.lattice.e[i, 0] > 0 else f[0, ...]).detach().clone().contiguous()
                 if self.rank != 0:
                     dist.send(tensor=output,
                               dst=self.next if self.lattice.e[i, 0] > 0 else self.prev)
