@@ -66,7 +66,7 @@ class Obstacle2D(object):
     def initial_solution(self, x):
         p = np.zeros_like(x[0], dtype=float)[None, ...]
         u_char = np.array([self.units.characteristic_velocity_pu, 0.0])[..., None, None]
-        u = (1 - self.mask.astype(np.float)) * u_char
+        u = (1 - np.ma.masked_array(self.mask.astype(np.float), ~np.isin(self.grid[0], x[0])).compressed().reshape(x[0].shape)) * u_char
         return p, u
 
     @property

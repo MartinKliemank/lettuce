@@ -29,8 +29,8 @@ class BounceBackBoundary:
         self.mask = lattice.convert_to_tensor(mask)
         self.lattice = lattice
 
-    def __call__(self, f):
-        f = torch.where(self.mask, f[self.lattice.stencil.opposite], f)
+    def __call__(self, f, index=...):
+        f = torch.where(self.mask[index], f[self.lattice.stencil.opposite], f)
         return f
 
     def make_no_collision_mask(self, f_shape):
@@ -50,12 +50,12 @@ class EquilibriumBoundaryPU:
         self.velocity = lattice.convert_to_tensor(velocity)
         self.pressure = lattice.convert_to_tensor(pressure)
 
-    def __call__(self, f):
+    def __call__(self, f, index=...):
         rho = self.units.convert_pressure_pu_to_density_lu(self.pressure)
         u = self.units.convert_velocity_to_lu(self.velocity)
         feq = self.lattice.equilibrium(rho, u)
         feq = self.lattice.einsum("q,q->q", [feq, torch.ones_like(f)])
-        f = torch.where(self.mask, feq, f)
+        f = torch.where(self.mask[index], feq, f)
         return f
 
 
@@ -71,16 +71,16 @@ class AntiBounceBackOutlet:
         assert (isinstance(direction, list) and len(direction) in [1,2,3] and ((np.abs(sum(direction)) == 1) and (np.max(np.abs(direction)) == 1) and (1 in direction) ^ (-1 in direction))), \
             LettuceException("Wrong direction. Expected list of length 1, 2 or 3 with all entrys 0 except one 1 or -1, "
                                 f"but got {type(direction)} of size {len(direction)} and entrys {direction}.")
-        direction = np.array(direction)
+        self.direction = np.array(direction)
         self.lattice = lattice
 
         #select velocities to be bounced (the ones pointing in "direction")
-        self.velocities = np.concatenate(np.argwhere(np.matmul(self.lattice.stencil.e, direction) > 1 - 1e-6), axis=0)
+        self.velocities = np.concatenate(np.argwhere(np.matmul(self.lattice.stencil.e, self.direction) > 1 - 1e-6), axis=0)
 
         # build indices of u and f that determine the side of the domain
         self.index = []
         self.neighbor = []
-        for i in direction:
+        for i in self.direction:
             if i == 0:
                 self.index.append(slice(None))
                 self.neighbor.append(slice(None))
@@ -91,13 +91,13 @@ class AntiBounceBackOutlet:
                 self.index.append(0)
                 self.neighbor.append(1)
         # construct indices for einsum and get w in proper shape for the calculation in each dimension
-        if len(direction) == 3:
+        if len(self.direction) == 3:
             self.dims = 'dc, cxy -> dxy'
             self.w = self.lattice.w[self.velocities].view(1, -1).t().unsqueeze(1)
-        if len(direction) == 2:
+        if len(self.direction) == 2:
             self.dims = 'dc, cx -> dx'
             self.w = self.lattice.w[self.velocities].view(1, -1).t()
-        if len(direction) == 1:
+        if len(self.direction) == 1:
             self.dims = 'dc, c -> dc'
             self.w = self.lattice.w[self.velocities]
 

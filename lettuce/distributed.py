@@ -1,7 +1,7 @@
 import torch.distributed as dist
 from timeit import default_timer as timer
 from lettuce import (
-    LettuceException, StandardStreaming, Simulation
+    LettuceException, StandardStreaming, Simulation, AntiBounceBackOutlet
 )
 from lettuce.util import pressure_poisson
 import pickle
@@ -10,7 +10,21 @@ import warnings
 import torch
 import numpy as np
 
-__all__ = ["DistributedSimulation", "DistributedStreaming"]
+__all__ = ["DistributedSimulation", "DistributedStreaming", "reassemble"]
+
+def reassemble(flow, lattice, tensor, rank, size):
+    if rank == 0:
+        assembly = tensor
+        for i in range(1, size):
+            input = torch.zeros([lattice.D] + list(flow.grid[0].shape), device=lattice.device, dtype=lattice.dtype)[:, int(np.floor(flow.grid[0].shape[0] * i / size)):int(np.floor(flow.grid[0].shape[0] * (i + 1) / size)), ...].contiguous()
+            dist.recv(tensor=input, src=i)
+            assembly = torch.cat((assembly, input), dim=1)
+        return assembly
+    else:
+        output = tensor.contiguous()
+        dist.send(tensor=output,
+                  dst=0)
+        return 1
 
 class DistributedSimulation(Simulation):
 
@@ -24,8 +38,13 @@ class DistributedSimulation(Simulation):
         self.streaming = streaming
         self.i = 0
 
-        grid = [x[int(np.floor(flow.grid[0].shape[0]*rank/size)):int(np.floor(flow.grid[0].shape[0]*(rank+1)/size)),...] for x in flow.grid]
-        print(f"Process {rank} covers {int(np.floor(flow.grid[0].shape[0]*rank/size))}:{int(np.floor(flow.grid[0].shape[0]*(rank+1)/size))}!")
+        self.index = [slice(int(np.floor(flow.grid[0].shape[0]*rank/size)),int(np.floor(flow.grid[0].shape[0]*(rank+1)/size))) ,...]
+
+
+        #grid = [x[int(np.floor(flow.grid[0].shape[0]*rank/size)):int(np.floor(flow.grid[0].shape[0]*(rank+1)/size)),...] for x in flow.grid]
+        grid = [x[tuple(self.index)] for x in flow.grid]
+        #print(f"Process {rank} covers {int(np.floor(flow.grid[0].shape[0]*rank/size))}:{int(np.floor(flow.grid[0].shape[0]*(rank+1)/size))}!")
+        print(f"Process {self.rank} covers {self.index}")
         p, u = flow.initial_solution(grid)
         assert list(p.shape) == [1] + list(grid[0].shape), \
             LettuceException(f"Wrong dimension of initial pressure field. "
@@ -52,15 +71,14 @@ class DistributedSimulation(Simulation):
         self._boundaries = deepcopy(self.flow.boundaries)  # store locally to keep the flow free from the boundary state
         for boundary in self._boundaries:
             if hasattr(boundary, "make_no_collision_mask"):
-                self.no_collision_mask = self.no_collision_mask | boundary.make_no_collision_mask(torch.zeros([lattice.Q]+list(flow.grid[0].shape)))[int(np.floor(flow.grid[0].shape[0]*rank/size)):int(np.floor(flow.grid[0].shape[0]*(rank+1)/size)),...]
+                self.no_collision_mask = self.no_collision_mask | boundary.make_no_collision_mask(torch.Size([lattice.Q]+list(flow.grid[0].shape)))[self.index]
             if hasattr(boundary, "make_no_stream_mask"):
-                no_stream_mask = no_stream_mask | boundary.make_no_stream_mask(torch.zeros([lattice.Q]+list(flow.grid[0].shape)))[:,int(np.floor(flow.grid[0].shape[0]*rank/size)):int(np.floor(flow.grid[0].shape[0]*(rank+1)/size)),...]
+                no_stream_mask = no_stream_mask | boundary.make_no_stream_mask(torch.Size([lattice.Q]+list(flow.grid[0].shape)))[[slice(None)] + self.index]
         if no_stream_mask.any():
             self.streaming.no_stream_mask = no_stream_mask
 
-    """
     def step(self, num_steps):
-        ""Take num_steps stream-and-collision steps and return performance in MLUPS.""
+        """Take num_steps stream-and-collision steps and return performance in MLUPS."""
         start = timer()
         if self.i == 0:
             self._report()
@@ -70,14 +88,22 @@ class DistributedSimulation(Simulation):
             # Perform the collision routine everywhere, expect where the no_collision_mask is true
             self.f = torch.where(self.no_collision_mask, self.f, self.collision(self.f))
             for boundary in self._boundaries:
-                self.f = boundary(self.f)
+                # Unterscheidung in "has direction" und has mask -> indices vs. ifs
+                if isinstance(boundary, AntiBounceBackOutlet):
+                    if boundary.direction[0] == -1 and self.rank == 0:
+                        self.f = boundary(self.f)
+                    elif boundary.direction[0] == 1 and self.rank == self.size - 1:
+                        self.f = boundary(self.f)
+                    elif boundary.direction[0] == 0:
+                        self.f = boundary(self.f)
+                else:
+                    self.f = boundary(self.f, self.index)
             self._report()
         end = timer()
         seconds = end - start
         num_grid_points = self.lattice.rho(self.f).numel()
         mlups = num_steps * num_grid_points / 1e6 / seconds
         return mlups
-"""
 
 class DistributedStreaming(StandardStreaming):
     """Standard streaming for distributed simulation, domain is separated along 0th (x)-dimension"""
@@ -93,7 +119,7 @@ class DistributedStreaming(StandardStreaming):
 #maybe make stream only roll again and stream all I's for one direction at the same time?
     def _stream(self, f, i):
         if self.lattice.e[i, 0] != 0 and self.size > 1:
-            if 1:
+            if 0:
                 f = f[i]
                 output = (f[-1, ...] if self.lattice.e[i, 0] > 0 else f[0, ...]).detach().clone().contiguous()
                 if self.rank != 0:
@@ -112,7 +138,7 @@ class DistributedStreaming(StandardStreaming):
                     dist.send(tensor=output,
                               dst=self.next if self.lattice.e[i, 0] > 0 else self.prev)
                 return f[1:-1, ...]
-            if 0:
+            if 1:
                 f = f[i]
                 output = (f[-1, ...] if self.lattice.e[i, 0] > 0 else f[0, ...]).detach().clone().contiguous()
                 out = dist.isend(tensor=output,
