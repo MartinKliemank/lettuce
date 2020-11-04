@@ -116,8 +116,100 @@ class DistributedStreaming(StandardStreaming):
         self.next = self.rank + 1 if self.rank != self.size - 1 else 0
         self._no_stream_mask = None
 
-#maybe make stream only roll again and stream all I's for one direction at the same time?
-    def _stream(self, f, i):
+    def __call__(self, f):
+        if 0:
+            forward = np.argwhere(self.lattice.e[:, 0] > 0)
+            backward = np.argwhere(self.lattice.e[:, 0] < 0)
+            output_forward = f[forward, -1, ...].detach().clone().contiguous()
+            output_backward = f[backward, 0, ...].detach().clone().contiguous()
+            input_forward = torch.zeros_like(f[forward, 0, ...])
+            input_backward = torch.zeros_like(f[backward, 0, ...])
+            if self.rank % 2 == 0:
+                dist.send(tensor=output_forward, dst=self.next)
+                dist.recv(tensor=input_forward.contiguous(), src=self.prev)
+                dist.send(tensor=output_backward, dst=self.prev)
+                dist.recv(tensor=input_backward.contiguous(), src=self.next)
+            else:
+                dist.recv(tensor=input_forward.contiguous(), src=self.prev)
+                dist.send(tensor=output_forward, dst=self.next)
+                dist.recv(tensor=input_backward.contiguous(), src=self.next)
+                dist.send(tensor=output_backward, dst=self.prev)
+
+            f = torch.cat((torch.zeros_like(f[:, 0, ...]).unsqueeze(1), f, torch.zeros_like(f[:, 0, ...]).unsqueeze(1)), dim=1)
+            f[forward, 0, ...] = input_forward
+            f[backward, -1, ...] = input_backward
+
+            for i in range(1, self.lattice.Q):
+                if self.no_stream_mask is None:
+                    f[i] = self._stream(f, i)
+                else:
+                    new_fi = self._stream(f, i)
+                    f[i] = torch.where(self.no_stream_mask[i], f[i], new_fi)
+
+            return f[:, 1:-1, ...]
+        else:
+            forward = np.argwhere(self.lattice.e[:, 0] > 0)
+            rest = np.argwhere(self.lattice.e[:, 0] == 0)
+            backward = np.argwhere(self.lattice.e[:, 0] < 0)
+            output_forward = f[forward, -1, ...].detach().clone().contiguous()
+            output_backward = f[backward, 0, ...].detach().clone().contiguous()
+            input_forward = torch.zeros_like(f[forward, 0, ...])
+            input_backward = torch.zeros_like(f[backward, 0, ...])
+
+            outf = dist.isend(tensor=output_forward, dst=self.next)
+            outb = dist.isend(tensor=output_backward, dst=self.prev)
+            inf = dist.irecv(tensor=input_forward.contiguous(), src=self.prev)
+            inb = dist.irecv(tensor=input_backward.contiguous(), src=self.next)
+
+            f = torch.cat((torch.zeros_like(f[:, 0, ...]).unsqueeze(1), f, torch.zeros_like(f[:, 0, ...]).unsqueeze(1)), dim=1)
+            inf.wait()
+            f[forward, 0, ...] = input_forward
+            inb.wait()
+            f[backward, -1, ...] = input_backward
+            for i in range(1, self.lattice.Q):
+                i = int(i)
+                if self.no_stream_mask is None:
+                    f[i] = self._stream(f, i)
+                else:
+                    new_fi = self._stream(f, i)
+                    f[i] = torch.where(self.no_stream_mask[i], f[i], new_fi)
+            ## Alternative that does backward / forward in the order the data arrive (doesn't work because .is_completed() is apparently bugged? ( https://github.com/pytorch/pytorch/issues/30723 )
+            # flag = 0
+            # while(flag < 3):
+            #     if flag == 0:
+            #         for i in rest[0]:
+            #             i = int(i)
+            #             if self.no_stream_mask is None:
+            #                 f[i] = self._stream(f, i)
+            #             else:
+            #                 new_fi = self._stream(f, i)
+            #                 f[i] = torch.where(self.no_stream_mask[i], f[i], new_fi)
+            #         flag = flag + 1
+            #     if inf.is_completed():
+            #         f[forward, 0, ...] = input_forward
+            #         for i in forward[0]:
+            #             i = int(i)
+            #             if self.no_stream_mask is None:
+            #                 f[i] = self._stream(f, i)
+            #             else:
+            #                 new_fi = self._stream(f, i)
+            #                 f[i] = torch.where(self.no_stream_mask[i], f[i], new_fi)
+            #         flag = flag + 1
+            #     if inb.is_completed():
+            #         f[backward, -1, ...] = input_backward
+            #         for i in backward[0]:
+            #             i = int(i)
+            #             if self.no_stream_mask is None:
+            #                 f[i] = self._stream(f, i)
+            #             else:
+            #                 new_fi = self._stream(f, i)
+            #                 f[i] = torch.where(self.no_stream_mask[i], f[i], new_fi)
+            #         flag = flag + 1
+            outf.wait()
+            outb.wait()
+            return f[:, 1:-1, ...]
+
+    def _Diststream(self, f, i):
         if self.lattice.e[i, 0] != 0 and self.size > 1:
             if 0:
                 f = f[i]
