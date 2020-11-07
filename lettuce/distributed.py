@@ -1,7 +1,7 @@
 import torch.distributed as dist
 from timeit import default_timer as timer
 from lettuce import (
-    LettuceException, StandardStreaming, Simulation, AntiBounceBackOutlet
+    LettuceException, StandardStreaming, Simulation, AntiBounceBackOutlet, Lattice, QuadraticEquilibrium
 )
 from lettuce.util import pressure_poisson
 import pickle
@@ -10,13 +10,15 @@ import warnings
 import torch
 import numpy as np
 
+
 __all__ = ["DistributedSimulation", "DistributedStreaming", "reassemble"]
+
 
 def reassemble(flow, lattice, tensor, rank, size):
     if rank == 0:
         assembly = tensor
         for i in range(1, size):
-            input = torch.zeros([lattice.D] + list(flow.grid[0].shape), device=lattice.device, dtype=lattice.dtype)[:, int(np.floor(flow.grid[0].shape[0] * i / size)):int(np.floor(flow.grid[0].shape[0] * (i + 1) / size)), ...].contiguous()
+            input = torch.zeros(list(flow.grid[0].shape), device=lattice.device, dtype=lattice.dtype)[int(np.floor(flow.grid[0].shape[0] * i / size)):int(np.floor(flow.grid[0].shape[0] * (i + 1) / size)), ...].contiguous()
             dist.recv(tensor=input, src=i)
             assembly = torch.cat((assembly, input), dim=1)
         return assembly
@@ -25,6 +27,7 @@ def reassemble(flow, lattice, tensor, rank, size):
         dist.send(tensor=output,
                   dst=0)
         return 1
+
 
 class DistributedSimulation(Simulation):
 
@@ -249,3 +252,23 @@ class DistributedStreaming(StandardStreaming):
                 return f[1:-1, ...]
         else:
             return torch.roll(f[i], shifts=tuple(self.lattice.stencil.e[i]), dims=tuple(np.arange(self.lattice.D)))
+
+    class DistributedLattice(Lattice):
+
+        def __init__(self, stencil, device, dtype=torch.float, size=1):
+            self.stencil = stencil
+            self.device = device
+            self.dtype = dtype
+            self.e = self.convert_to_tensor(stencil.e)
+            self.w = self.convert_to_tensor(stencil.w)
+            self.cs = self.convert_to_tensor(stencil.cs)
+            self.equilibrium = QuadraticEquilibrium(self)
+            self.size = size
+
+        @property
+        def device(self):
+            return self.device
+
+        @device.setter
+        def device(self, deviceIn):
+            self.device = deviceIn
