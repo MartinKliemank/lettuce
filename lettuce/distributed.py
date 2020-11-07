@@ -114,6 +114,9 @@ class DistributedStreaming(StandardStreaming):
         self.rank = rank
         self.prev = self.rank - 1 if self.rank != 0 else self.size - 1
         self.next = self.rank + 1 if self.rank != self.size - 1 else 0
+        self.forward = np.argwhere(self.lattice.stencil.e[:, 0] > 0)
+        self.rest = np.argwhere(self.lattice.stencil.e[:, 0] == 0)
+        self.backward = np.argwhere(self.lattice.stencil.e[:, 0] < 0)
         self._no_stream_mask = None
 
     def __call__(self, f):
@@ -148,13 +151,10 @@ class DistributedStreaming(StandardStreaming):
 
             return f[:, 1:-1, ...]
         else:
-            forward = np.argwhere(self.lattice.e[:, 0] > 0)
-            rest = np.argwhere(self.lattice.e[:, 0] == 0)
-            backward = np.argwhere(self.lattice.e[:, 0] < 0)
-            output_forward = f[forward, -1, ...].detach().clone().contiguous()
-            output_backward = f[backward, 0, ...].detach().clone().contiguous()
-            input_forward = torch.zeros_like(f[forward, 0, ...])
-            input_backward = torch.zeros_like(f[backward, 0, ...])
+            output_forward = f[self.forward, -1, ...].detach().clone().contiguous()
+            output_backward = f[self.backward, 0, ...].detach().clone().contiguous()
+            input_forward = torch.zeros_like(f[self.forward, 0, ...])
+            input_backward = torch.zeros_like(f[self.backward, 0, ...])
 
             outf = dist.isend(tensor=output_forward, dst=self.next)
             outb = dist.isend(tensor=output_backward, dst=self.prev)
@@ -163,9 +163,9 @@ class DistributedStreaming(StandardStreaming):
 
             f = torch.cat((torch.zeros_like(f[:, 0, ...]).unsqueeze(1), f, torch.zeros_like(f[:, 0, ...]).unsqueeze(1)), dim=1)
             inf.wait()
-            f[forward, 0, ...] = input_forward
+            f[self.forward, 0, ...] = input_forward
             inb.wait()
-            f[backward, -1, ...] = input_backward
+            f[self.backward, -1, ...] = input_backward
             for i in range(1, self.lattice.Q):
                 i = int(i)
                 if self.no_stream_mask is None:
@@ -177,7 +177,7 @@ class DistributedStreaming(StandardStreaming):
             # flag = 0
             # while(flag < 3):
             #     if flag == 0:
-            #         for i in rest[0]:
+            #         for i in self.rest[0]:
             #             i = int(i)
             #             if self.no_stream_mask is None:
             #                 f[i] = self._stream(f, i)
@@ -187,7 +187,7 @@ class DistributedStreaming(StandardStreaming):
             #         flag = flag + 1
             #     if inf.is_completed():
             #         f[forward, 0, ...] = input_forward
-            #         for i in forward[0]:
+            #         for i in self.forward[0]:
             #             i = int(i)
             #             if self.no_stream_mask is None:
             #                 f[i] = self._stream(f, i)
@@ -197,7 +197,7 @@ class DistributedStreaming(StandardStreaming):
             #         flag = flag + 1
             #     if inb.is_completed():
             #         f[backward, -1, ...] = input_backward
-            #         for i in backward[0]:
+            #         for i in self.backward[0]:
             #             i = int(i)
             #             if self.no_stream_mask is None:
             #                 f[i] = self._stream(f, i)
