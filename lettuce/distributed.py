@@ -11,7 +11,7 @@ import torch
 import numpy as np
 
 
-__all__ = ["DistributedSimulation", "DistributedStreaming", "reassemble"]
+__all__ = ["DistributedSimulation", "DistributedStreaming", "reassemble", "DistributedLattice"]
 
 
 def reassemble(flow, lattice, tensor, rank, size):
@@ -20,7 +20,7 @@ def reassemble(flow, lattice, tensor, rank, size):
         for i in range(1, size):
             input = torch.zeros(list(flow.grid[0].shape), device=lattice.device, dtype=lattice.dtype)[int(np.floor(flow.grid[0].shape[0] * i / size)):int(np.floor(flow.grid[0].shape[0] * (i + 1) / size)), ...].contiguous()
             dist.recv(tensor=input, src=i)
-            assembly = torch.cat((assembly, input), dim=1)
+            assembly = torch.cat((assembly, input), dim=0)
         return assembly
     else:
         output = tensor.contiguous()
@@ -253,22 +253,21 @@ class DistributedStreaming(StandardStreaming):
         else:
             return torch.roll(f[i], shifts=tuple(self.lattice.stencil.e[i]), dims=tuple(np.arange(self.lattice.D)))
 
-    class DistributedLattice(Lattice):
 
-        def __init__(self, stencil, device, dtype=torch.float, size=1):
-            self.stencil = stencil
-            self.device = device
-            self.dtype = dtype
-            self.e = self.convert_to_tensor(stencil.e)
-            self.w = self.convert_to_tensor(stencil.w)
-            self.cs = self.convert_to_tensor(stencil.cs)
-            self.equilibrium = QuadraticEquilibrium(self)
-            self.size = size
+class DistributedLattice(Lattice):
 
-        @property
-        def device(self):
-            return self.device
+    def __init__(self, stencil, deviceIn, dtype=torch.float):
+        self.stencil = stencil
+        self._device = deviceIn
+        self.dtype = dtype
+        self.e = self.convert_to_tensor(stencil.e)
+        self.w = self.convert_to_tensor(stencil.w)
+        self.cs = self.convert_to_tensor(stencil.cs)
+        self.equilibrium = QuadraticEquilibrium(self)
 
-        @device.setter
-        def device(self, deviceIn):
-            self.device = deviceIn
+    @property
+    def device(self):
+        if self._device.type == "cuda":
+            return torch.device(f"cuda:{torch.distributed.get_rank()}")
+        else:
+            return self._device
