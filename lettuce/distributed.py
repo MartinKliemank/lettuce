@@ -22,6 +22,7 @@ def reassemble(flow, lattice, tensor, rank, size):
             print(f"Prepped {input.shape} for process {i}")
             dist.recv(tensor=input, src=i)
             print(f"Recieved {input.shape} from process {i}")
+            input = input.cuda()
             assembly = torch.cat((assembly, input), dim=0)
             print(f"Assembled input from {i}")
         return assembly
