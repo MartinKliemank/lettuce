@@ -20,12 +20,15 @@ def reassemble(flow, lattice, tensor, rank, size):
         for i in range(1, size):
             input = torch.zeros(list(flow.grid[0].shape), dtype=lattice.dtype)[int(np.floor(flow.grid[0].shape[0] * i / size)):int(np.floor(flow.grid[0].shape[0] * (i + 1) / size)), ...].contiguous()
             dist.recv(tensor=input, src=i)
+            print(f"Recieved {input.shape} from process {i}")
             assembly = torch.cat((assembly, input), dim=0)
+            print(f"Assembled input from {i}")
         return assembly
     else:
         output = tensor.contiguous()
-        dist.send(tensor=output.to(torch.device("cuda:0")),
+        dist.send(tensor=output,
                   dst=0)
+        print(f"Process {rank} is done sending for reassembly")
         return 1
 
 
