@@ -11,15 +11,16 @@ import torch
 import numpy as np
 
 
-__all__ = ["DistributedSimulation", "DistributedStreaming", "reassemble", "DistributedLattice"]
+__all__ = ["DistributedSimulation", "DistributedStreaming", "reassemble", "DistributedLattice", "DistributedStreamcolliding"]
 
 
 def reassemble(flow, lattice, tensor, rank, size):
     if rank == 0:
         assembly = tensor
         for i in range(1, size):
-            input = torch.zeros(list(flow.grid[0].shape), device=lattice.device, dtype=lattice.dtype)[int(np.floor(flow.grid[0].shape[0] * i / size)):int(np.floor(flow.grid[0].shape[0] * (i + 1) / size)), ...].contiguous()
+            input = torch.zeros(list(flow.grid[0].shape), dtype=lattice.dtype)[int(np.floor(flow.grid[0].shape[0] * i / size)):int(np.floor(flow.grid[0].shape[0] * (i + 1) / size)), ...].contiguous()
             dist.recv(tensor=input, src=i)
+            input = input.to(lattice.device)
             assembly = torch.cat((assembly, input), dim=0)
         return assembly
     else:
@@ -59,7 +60,7 @@ class DistributedSimulation(Simulation):
                              f"but got {list(u.shape)}.")
         u = lattice.convert_to_tensor(flow.units.convert_velocity_to_lu(u))
         rho = lattice.convert_to_tensor(flow.units.convert_pressure_pu_to_density_lu(p))
-        self.f = lattice.equilibrium(rho, lattice.convert_to_tensor(u))
+        self.f = lattice.equilibrium(rho, u)
 
         self.reporters = []
 
@@ -87,6 +88,8 @@ class DistributedSimulation(Simulation):
             self._report()
         for _ in range(num_steps):
             self.i += 1
+            #self.streaming(self.f, self.no_collision_mask)
+            #"""
             self.f = self.streaming(self.f)
             # Perform the collision routine everywhere, expect where the no_collision_mask is true
             self.f = torch.where(self.no_collision_mask, self.f, self.collision(self.f))
@@ -101,6 +104,7 @@ class DistributedSimulation(Simulation):
                         self.f = boundary(self.f)
                 else:
                     self.f = boundary(self.f, self.index)
+            #"""
             self._report()
         end = timer()
         seconds = end - start
@@ -166,6 +170,7 @@ class DistributedStreaming(StandardStreaming):
 
             f = torch.cat((torch.zeros_like(f[:, 0, ...]).unsqueeze(1), f, torch.zeros_like(f[:, 0, ...]).unsqueeze(1)), dim=1)
             inf.wait()
+            #WIP: vor diesem wait schon mal rest streamen?
             f[self.forward, 0, ...] = input_forward
             inb.wait()
             f[self.backward, -1, ...] = input_backward
@@ -271,3 +276,89 @@ class DistributedLattice(Lattice):
             return torch.device(f"cuda:{torch.distributed.get_rank()}")
         else:
             return self._device
+
+
+class DistributedStreamcolliding():
+
+    def __init__(self, lattice, rank, size, collision):
+        self.lattice = lattice
+        self.size = size
+        self.rank = rank
+        self.prev = self.rank - 1 if self.rank != 0 else self.size - 1
+        self.next = self.rank + 1 if self.rank != self.size - 1 else 0
+        self.forward = np.argwhere(self.lattice.stencil.e[:, 0] > 0)
+        self.rest = np.argwhere(self.lattice.stencil.e[:, 0] == 0)
+        self.backward = np.argwhere(self.lattice.stencil.e[:, 0] < 0)
+        self._no_stream_mask = None
+        self.collision = collision
+
+    @property
+    def no_stream_mask(self):
+        return self._no_stream_mask
+
+    @no_stream_mask.setter
+    def no_stream_mask(self, mask):
+        self._no_stream_mask = mask
+
+    def __call__(self, f, no_collision_mask):
+        """
+        for boundary in self._boundaries:
+            # Unterscheidung in "has direction" und has mask -> indices vs. ifs
+            if isinstance(boundary, AntiBounceBackOutlet):
+                if boundary.direction[0] == -1 and self.rank == 0:
+                    self.f = boundary(self.f)
+                elif boundary.direction[0] == 1 and self.rank == self.size - 1:
+                    self.f = boundary(self.f)
+                elif boundary.direction[0] == 0:
+                    self.f = boundary(self.f)
+            else:
+                self.f = boundary(self.f, self.index)
+        """
+        output_forward = f[self.forward, -1, ...].detach().clone().contiguous()
+        output_backward = f[self.backward, 0, ...].detach().clone().contiguous()
+        input_forward = torch.zeros_like(f[self.forward, 0, ...])
+        input_backward = torch.zeros_like(f[self.backward, 0, ...])
+
+        outf = dist.isend(tensor=output_forward, dst=self.next)
+        outb = dist.isend(tensor=output_backward, dst=self.prev)
+        inf = dist.irecv(tensor=input_forward.contiguous(), src=self.prev)
+        inb = dist.irecv(tensor=input_backward.contiguous(), src=self.next)
+
+
+        # hier inneres Streamen + colliden, dann unten nur noch Rand streamen und colliden
+
+        # normal streaming, because fs that move out on one side will end up in the place where the incoming ones will overwrite them?
+        for i in range(1, self.lattice.Q):
+            i = int(i)
+            if self.no_stream_mask is None:
+                f[i] = self._stream(f, i)
+            else:
+                new_fi = self._stream(f, i)
+                f[i] = torch.where(self.no_stream_mask[i], f[i], new_fi)
+        # collision on full domain - first and last x-coordinate where the wrong fs are
+        f[:, 1:-1, ...] = torch.where(no_collision_mask[1:-1, ...], f[:, 1:-1, ...], self.collision(f[:, 1:-1, ...]))
+
+        inf.wait()
+        # boundaries need to be watched out for!!!
+        input_forward = torch.cat((input_forward, torch.zeros_like(input_forward)), dim=1)
+        for i in self.forward[0]:
+            i = int(i)
+            input_forward[np.argwhere(self.backward==i)[0]] = self._stream(input_forward, i)
+        f[self.forward, 0, ...] = input_forward[:, -1, ...].unsqueeze(1)
+        f[:, 0, ...] = torch.where(no_collision_mask[0, ...].unsqueeze(0), f[:, 0, ...].unsqueeze(1), self.collision(f[:, 0, ...].unsqueeze(1))).squeeze(1)
+        inb.wait()
+        # boundaries need to be watched out for!!!
+        input_backward = torch.cat((torch.zeros_like(input_backward), input_backward), dim=1)
+        for i in self.backward[0]:
+            i = int(i)
+            input_backward[np.argwhere(self.backward==i)[0]] = self._stream(input_backward, i)
+        f[self.backward, -1, ...] = input_backward[:, -1, ...].unsqueeze(1)
+# muss der so alles zwei mal colliden?
+        f[:, -1, ...] = torch.where(no_collision_mask[-1, ...].unsqueeze(0), f[:, -1, ...].unsqueeze(1), self.collision(f[:, -1, ...].unsqueeze(1))).squeeze(1)
+
+        outf.wait()
+        outb.wait()
+        return f
+
+    def _stream(self, f, i):
+        return torch.roll(f[i], shifts=tuple(self.lattice.stencil.e[i]), dims=tuple(np.arange(self.lattice.D)))
