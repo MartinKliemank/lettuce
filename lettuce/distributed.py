@@ -18,11 +18,13 @@ def reassemble(flow, lattice, tensor, rank, size):
     if rank == 0:
         assembly = tensor
         for i in range(1, size):
-            input = torch.zeros(list(flow.grid[0].shape), device=torch.device(f"cpu"), dtype=lattice.dtype)[int(np.floor(flow.grid[0].shape[0] * i / size)):int(np.floor(flow.grid[0].shape[0] * (i + 1) / size)), ...].contiguous()
+            torch.cuda.set_device(i)
+            input = torch.zeros(list(flow.grid[0].shape), device=torch.device(f"cuda:{i}"), dtype=lattice.dtype)[int(np.floor(flow.grid[0].shape[0] * i / size)):int(np.floor(flow.grid[0].shape[0] * (i + 1) / size)), ...].contiguous()
             print(f"Prepped {input.shape} for process {i}")
             dist.recv(tensor=input, src=i)
             print(f"Recieved {input.shape} from process {i}")
             input = input.to(lattice.device)
+            torch.cuda.set_device(0)
             print(f"Sent {input.shape} from cuda {i} to 0")
             assembly = torch.cat((assembly, input), dim=0)
             print(f"Assembled input from {i}")
