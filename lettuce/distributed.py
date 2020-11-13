@@ -69,8 +69,7 @@ class DistributedSimulation(Simulation):
         self.reporters = []
 
         # Define masks, where the collision or streaming are not applied
-        x = grid
-        self.no_collision_mask = lattice.convert_to_tensor(np.zeros_like(x[0], dtype=bool))
+        self.no_collision_mask = lattice.convert_to_tensor(np.zeros_like(grid[0], dtype=bool))
         no_stream_mask = lattice.convert_to_tensor(np.zeros(self.f.shape, dtype=bool))
 
 #find out which boundaries apply in what region... (input large f and take small part of mask?) (NOT TESTED YET!!!!!!)
