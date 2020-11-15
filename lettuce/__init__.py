@@ -25,6 +25,7 @@ from lettuce.simulation import *
 from lettuce.force import *
 from lettuce.observables import *
 from lettuce.distributed import *
+from lettuce.grid import *
 
 from lettuce.flows import *
 
