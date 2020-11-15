@@ -30,15 +30,15 @@ class Simulation:
         self.streaming = streaming
         self.i = 0
 
-        grid = flow.grid
-        p, u = flow.initial_solution(grid)
-        assert list(p.shape) == [1] + list(grid[0].shape), \
+        #grid = flow.grid()
+        p, u = flow.initial_solution(flow.grid())
+        assert list(p.shape) == [1] + list(flow.grid.shape), \
             LettuceException(f"Wrong dimension of initial pressure field. "
-                             f"Expected {[1] + list(grid[0].shape)}, "
+                             f"Expected {[1] + list(flow.grid.shape)}, "
                              f"but got {list(p.shape)}.")
-        assert list(u.shape) == [lattice.D] + list(grid[0].shape), \
+        assert list(u.shape) == [lattice.D] + list(flow.grid.shape), \
             LettuceException("Wrong dimension of initial velocity field."
-                             f"Expected {[lattice.D] + list(grid[0].shape)}, "
+                             f"Expected {[lattice.D] + list(flow.grid.shape)}, "
                              f"but got {list(u.shape)}.")
         u = lattice.convert_to_tensor(flow.units.convert_velocity_to_lu(u))
         rho = lattice.convert_to_tensor(flow.units.convert_pressure_pu_to_density_lu(p))
@@ -47,8 +47,7 @@ class Simulation:
         self.reporters = []
 
         # Define masks, where the collision or streaming are not applied
-        x = flow.grid
-        self.no_collision_mask = lattice.convert_to_tensor(np.zeros_like(x[0],dtype=bool))
+        self.no_collision_mask = lattice.convert_to_tensor(np.zeros_like(flow.grid()[0],dtype=bool))
         no_stream_mask = lattice.convert_to_tensor(np.zeros(self.f.shape, dtype=bool))
 
         # Apply boundaries

@@ -11,9 +11,9 @@ import torch
 import numpy as np
 
 
-__all__ = ["DistributedSimulation", "DistributedStreaming", "reassemble", "DistributedLattice", "DistributedStreamcolliding"]
+__all__ = ["DistributedSimulation", "DistributedStreaming", "DistributedStreamcolliding"]
 
-
+"""
 def reassemble(flow, lattice, tensor, rank, size):
     if rank == 0:
         assembly = tensor
@@ -32,7 +32,7 @@ def reassemble(flow, lattice, tensor, rank, size):
         dist.send(tensor=output,
                   dst=0)
         return 1
-
+"""
 
 class DistributedSimulation(Simulation):
 
@@ -46,21 +46,21 @@ class DistributedSimulation(Simulation):
         self.streaming = streaming
         self.i = 0
 
-        self.index = [slice(int(np.floor(flow.grid[0].shape[0]*rank/size)),int(np.floor(flow.grid[0].shape[0]*(rank+1)/size))) ,...]
+        self.index = [flow.grid.index, ...] #[slice(int(np.floor(flow.grid()[0].shape[0]*rank/size)),int(np.floor(flow.grid()[0].shape[0]*(rank+1)/size))) ,...]
 
 
         #grid = [x[int(np.floor(flow.grid[0].shape[0]*rank/size)):int(np.floor(flow.grid[0].shape[0]*(rank+1)/size)),...] for x in flow.grid]
-        grid = [x[tuple(self.index)] for x in flow.grid]
-        #print(f"Process {rank} covers {int(np.floor(flow.grid[0].shape[0]*rank/size))}:{int(np.floor(flow.grid[0].shape[0]*(rank+1)/size))}!")
+        #grid = flow.grid() #[x[tuple(self.index)] for x in flow.grid]
+        print(flow.grid.shape)
         print(f"Process {self.rank} covers {self.index}")
-        p, u = flow.initial_solution(grid)
-        assert list(p.shape) == [1] + list(grid[0].shape), \
+        p, u = flow.initial_solution(flow.grid())
+        assert list(p.shape) == [1] + list(flow.grid.shape), \
             LettuceException(f"Wrong dimension of initial pressure field. "
-                             f"Expected {[1] + list(grid[0].shape)}, "
+                             f"Expected {[1] + list(flow.grid.shape)}, "
                              f"but got {list(p.shape)}.")
-        assert list(u.shape) == [lattice.D] + list(grid[0].shape), \
+        assert list(u.shape) == [lattice.D] + list(flow.grid.shape), \
             LettuceException("Wrong dimension of initial velocity field."
-                             f"Expected {[lattice.D] + list(grid[0].shape)}, "
+                             f"Expected {[lattice.D] + list(flow.grid.shape)}, "
                              f"but got {list(u.shape)}.")
         u = lattice.convert_to_tensor(flow.units.convert_velocity_to_lu(u))
         rho = lattice.convert_to_tensor(flow.units.convert_pressure_pu_to_density_lu(p))
@@ -69,18 +69,16 @@ class DistributedSimulation(Simulation):
         self.reporters = []
 
         # Define masks, where the collision or streaming are not applied
-        self.no_collision_mask = lattice.convert_to_tensor(np.zeros_like(grid[0], dtype=bool))
+        self.no_collision_mask = lattice.convert_to_tensor(np.zeros_like(flow.grid()[0], dtype=bool))
         no_stream_mask = lattice.convert_to_tensor(np.zeros(self.f.shape, dtype=bool))
-
-#find out which boundaries apply in what region... (input large f and take small part of mask?) (NOT TESTED YET!!!!!!)
 
         # Apply boundaries
         self._boundaries = deepcopy(self.flow.boundaries)  # store locally to keep the flow free from the boundary state
         for boundary in self._boundaries:
             if hasattr(boundary, "make_no_collision_mask"):
-                self.no_collision_mask = self.no_collision_mask | boundary.make_no_collision_mask(torch.Size([lattice.Q]+list(flow.grid[0].shape)))[self.index]
+                self.no_collision_mask = self.no_collision_mask | flow.grid.select(boundary.make_no_collision_mask(flow.grid.global_shape))#[self.index] #WIP index weg / anpassen
             if hasattr(boundary, "make_no_stream_mask"):
-                no_stream_mask = no_stream_mask | boundary.make_no_stream_mask(torch.Size([lattice.Q]+list(flow.grid[0].shape)))[[slice(None)] + self.index]
+                no_stream_mask = no_stream_mask | flow.grid.select(boundary.make_no_stream_mask(torch.Size([lattice.Q]+list(flow.grid.global_shape))))#[[slice(None)] + self.index]
         if no_stream_mask.any():
             self.streaming.no_stream_mask = no_stream_mask
 
@@ -127,7 +125,7 @@ class DistributedStreaming(StandardStreaming):
         self.forward = np.argwhere(self.lattice.stencil.e[:, 0] > 0)
         self.rest = np.argwhere(self.lattice.stencil.e[:, 0] == 0)
         self.backward = np.argwhere(self.lattice.stencil.e[:, 0] < 0)
-        self._no_stream_mask = None
+        self.no_stream_mask = None
 
     def __call__(self, f):
         if 0:
@@ -172,6 +170,10 @@ class DistributedStreaming(StandardStreaming):
             inb = dist.irecv(tensor=input_backward.contiguous(), src=self.next)
 
             f = torch.cat((torch.zeros_like(f[:, 0, ...]).unsqueeze(1), f, torch.zeros_like(f[:, 0, ...]).unsqueeze(1)), dim=1)
+            if self.no_stream_mask is not None:
+                no_stream_mask = torch.cat((torch.zeros_like(self.no_stream_mask[:, 0, ...]).unsqueeze(1),
+                                            self.no_stream_mask,
+                                            torch.zeros_like(self.no_stream_mask[:, -1, ...]).unsqueeze(1)), dim=1)
             inf.wait()
             #WIP: vor diesem wait schon mal rest streamen?
             f[self.forward, 0, ...] = input_forward
@@ -183,7 +185,7 @@ class DistributedStreaming(StandardStreaming):
                     f[i] = self._stream(f, i)
                 else:
                     new_fi = self._stream(f, i)
-                    f[i] = torch.where(self.no_stream_mask[i], f[i], new_fi)
+                    f[i] = torch.where(no_stream_mask[i], f[i], new_fi)
             ## Alternative that does backward / forward in the order the data arrive (doesn't work because .is_completed() is apparently bugged? ( https://github.com/pytorch/pytorch/issues/30723 )
             # flag = 0
             # while(flag < 3):
@@ -261,7 +263,7 @@ class DistributedStreaming(StandardStreaming):
         else:
             return torch.roll(f[i], shifts=tuple(self.lattice.stencil.e[i]), dims=tuple(np.arange(self.lattice.D)))
 
-
+"""
 class DistributedLattice(Lattice):
 
     def __init__(self, stencil, deviceIn, dtype=torch.float):
@@ -279,7 +281,7 @@ class DistributedLattice(Lattice):
             return torch.device(f"cuda:{torch.distributed.get_rank()}")
         else:
             return self._device
-
+"""
 
 class DistributedStreamcolliding(object):
 

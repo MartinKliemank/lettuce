@@ -33,8 +33,8 @@ class BounceBackBoundary:
         f = torch.where(self.mask[index], f[self.lattice.stencil.opposite], f)
         return f
 
-    def make_no_collision_mask(self, f_shape):
-        assert self.mask.shape == f_shape[1:]
+    def make_no_collision_mask(self, grid_shape):
+        assert self.mask.shape == grid_shape
         return self.mask
 
 
