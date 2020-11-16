@@ -9,6 +9,7 @@ from copy import deepcopy
 import warnings
 import torch
 import numpy as np
+from os import path
 
 
 __all__ = ["DistributedSimulation", "DistributedStreaming", "DistributedStreamcolliding"]
@@ -112,6 +113,23 @@ class DistributedSimulation(Simulation):
         num_grid_points = self.lattice.rho(self.f).numel()
         mlups = num_steps * num_grid_points / 1e6 / seconds
         return mlups
+
+    #simulation.save_checkpoint("3D_enstropies_64_CHECKPOINTS.pkl")
+    def save_checkpoint(self, filename):
+        """Write f as np.array using pickle module."""
+        folder, file = path.split(filename)
+        file = f"{self.rank}-" + file
+        filename = path.join(folder, file)
+        with open(filename, "wb") as fp:
+            pickle.dump(self.f, fp)
+
+    def load_checkpoint(self, filename):
+        """Load f as np.array using pickle module."""
+        folder, file = path.split(filename)
+        file = f"{self.rank}-" + file
+        filename = path.join(folder, file)
+        with open(filename, "rb") as fp:
+            self.f = pickle.load(fp)
 
 class DistributedStreaming(StandardStreaming):
     """Standard streaming for distributed simulation, domain is separated along 0th (x)-dimension"""
