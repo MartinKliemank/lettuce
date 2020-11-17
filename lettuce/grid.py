@@ -86,7 +86,6 @@ class RegularGrid(object):
             index = self.index
 
         if len(tensor.shape) > len(self.resolution):
-            print(index)
             return tensor[:, index, ...]
         else:
             return tensor[index, ...]

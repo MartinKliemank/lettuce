@@ -30,7 +30,6 @@ class Simulation:
         self.streaming = streaming
         self.i = 0
 
-        #grid = flow.grid()
         p, u = flow.initial_solution(flow.grid())
         assert list(p.shape) == [1] + list(flow.grid.shape), \
             LettuceException(f"Wrong dimension of initial pressure field. "
@@ -54,9 +53,9 @@ class Simulation:
         self._boundaries = deepcopy(self.flow.boundaries)  # store locally to keep the flow free from the boundary state
         for boundary in self._boundaries:
             if hasattr(boundary, "make_no_collision_mask"):
-                self.no_collision_mask = self.no_collision_mask | boundary.make_no_collision_mask(self.f.shape)
+                self.no_collision_mask = self.no_collision_mask | boundary.make_no_collision_mask(flow.grid.global_shape)
             if hasattr(boundary, "make_no_stream_mask"):
-                no_stream_mask = no_stream_mask | boundary.make_no_stream_mask(self.f.shape)
+                no_stream_mask = no_stream_mask | boundary.make_no_stream_mask(torch.Size([lattice.Q]+list(flow.grid.global_shape)))
         if no_stream_mask.any():
             self.streaming.no_stream_mask = no_stream_mask
 

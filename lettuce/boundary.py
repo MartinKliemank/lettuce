@@ -20,8 +20,16 @@ import numpy as np
 from lettuce import (LettuceException)
 
 
-__all__ = ["BounceBackBoundary", "AntiBounceBackOutlet", "EquilibriumBoundaryPU", "EquilibriumOutletP"]
+__all__ = ["BounceBackBoundary", "AntiBounceBackOutlet", "EquilibriumBoundaryPU", "EquilibriumOutletP",
+           "ZeroGradientOutlet"]
 
+
+class DirectionalBoundary(object):
+    pass
+
+
+class ObjectBoundary(object):
+    pass
 
 class BounceBackBoundary:
     """Fullway Bounce-Back Boundary"""
@@ -149,3 +157,88 @@ class EquilibriumOutletP(AntiBounceBackOutlet):
         no_collision_mask = torch.zeros(size=f_shape[1:], dtype=torch.bool, device=self.lattice.device)
         no_collision_mask[self.index] = 1
         return no_collision_mask
+
+
+class ZeroGradientOutlet(object):
+
+    def __init__(self, lattice, direction):
+        assert (isinstance(direction, list) and len(direction) in [1,2,3] and ((np.abs(sum(direction)) == 1) and (np.max(np.abs(direction)) == 1) and (1 in direction) ^ (-1 in direction))), \
+            LettuceException("Wrong direction. Expected list of length 1, 2 or 3 with all entrys 0 except one 1 or -1, "
+                                f"but got {type(direction)} of size {len(direction)} and entrys {direction}.")
+        self.direction = np.array(direction)
+        self.lattice = lattice
+
+        #select velocities to be replaced (the ones pointing against "direction")
+        self.velocities = np.concatenate(np.argwhere(np.matmul(self.lattice.stencil.e, self.direction) < -1 + 1e-6), axis=0)
+
+        # build indices of u and f that determine the side of the domain
+        self.index = []
+        self.neighbor = []
+        for i in self.direction:
+            if i == 0:
+                self.index.append(slice(None))
+                self.neighbor.append(slice(None))
+            if i == 1:
+                self.index.append(-1)
+                self.neighbor.append(-2)
+            if i == -1:
+                self.index.append(0)
+                self.neighbor.append(1)
+
+    def __call__(self, f):
+        f[[self.velocities] + self.index] = f[[self.velocities] + self.neighbor]
+        return f
+
+    def make_no_stream_mask(self, f_shape):
+        no_stream_mask = torch.zeros(size=f_shape, dtype=torch.bool, device=self.lattice.device)
+        no_stream_mask[[self.velocities] + self.index] = 1
+        return no_stream_mask
+
+class BounceBackVelocityInlet(object):
+    """Allows distributions to enter domain with set speed through this boundary.
+        Based on equations from page 195 of "The lattice Boltzmann method" (2016 by Krüger et al.)
+        Give the side of the domain with the boundary as list [x, y, z] with only one entry nonzero
+        [1, 0, 0] for positive x-direction in 3D; [1, 0] for the same in 2D
+        [0, -1, 0] is negative y-direction in 3D; [0, -1] for the same in 2D
+        """
+
+    def __init__(self, lattice, direction, velocity_lu):
+        assert (isinstance(direction, list) and len(direction) in [1,2,3] and ((np.abs(sum(direction)) == 1) and (np.max(np.abs(direction)) == 1) and (1 in direction) ^ (-1 in direction))), \
+            LettuceException("Wrong direction. Expected list of length 1, 2 or 3 with all entrys 0 except one 1 or -1, "
+                                f"but got {type(direction)} of size {len(direction)} and entrys {direction}.")
+        self.direction = np.array(direction)
+        self.lattice = lattice
+        self.velocity_lu = velocity_lu
+
+        #select velocities to be bounced (the ones pointing in "direction")
+        self.velocities_out = np.concatenate(np.argwhere(np.matmul(self.lattice.stencil.e, self.direction) > 1 - 1e-6), axis=0)
+        # select velocities to be replaced (the ones pointing against "direction")
+        self.velocities_in = np.concatenate(np.argwhere(np.matmul(self.lattice.stencil.e, self.direction) < -1 + 1e-6), axis=0)
+
+        # build indices of u and f that determine the side of the domain
+        self.index = []
+        self.neighbor = []
+        for i in self.direction:
+            if i == 0:
+                self.index.append(slice(None))
+                self.neighbor.append(slice(None))
+            if i == 1:
+                self.index.append(-1)
+                self.neighbor.append(-2)
+            if i == -1:
+                self.index.append(0)
+                self.neighbor.append(1)
+
+    def __call__(self, f):
+        rho = self.lattice.rho(f)
+        rho_w = rho[self.index] + 0.5 * (rho[self.index] - rho[self.neighbor])
+        f[[self.velocities_in] + self.index] = (
+                f[[self.velocities_out] + self.index] - 2 * self.lattice.w[self.velocities_out] * rho_w *
+                self.lattice.e[self.velocities_out] * self.velocity_lu / self.lattice.cs ** 2
+        )
+        return f
+
+    def make_no_stream_mask(self, f_shape):
+        no_stream_mask = torch.zeros(size=f_shape, dtype=torch.bool, device=self.lattice.device)
+        no_stream_mask[[np.array(self.lattice.stencil.opposite)[self.velocities_in]] + self.index] = 1
+        return no_stream_mask
