@@ -19,7 +19,7 @@ class QuadraticEquilibrium(Equilibrium):
         feq = self.lattice.einsum(
             "q,q->q",
             [self.lattice.w,
-             (rho * ((2 * exu - uxu) / (2 * self.lattice.cs ** 2) + 0.5 * (exu / (self.lattice.cs ** 2)) ** 2 + 1))]
+             rho * ((2 * exu - uxu) / (2 * self.lattice.cs ** 2) + 0.5 * (exu / (self.lattice.cs ** 2)) ** 2 + 1)]
         )
         # spart bei 200³ 20% peak-Ram für 2% längere Zeitschritte
         #feq = self.lattice.einsum(
