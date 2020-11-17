@@ -1,12 +1,10 @@
 import torch.distributed as dist
 from timeit import default_timer as timer
 from lettuce import (
-    LettuceException, StandardStreaming, Simulation, AntiBounceBackOutlet, Lattice, QuadraticEquilibrium
+    LettuceException, StandardStreaming, Simulation, AntiBounceBackOutlet
 )
-from lettuce.util import pressure_poisson
 import pickle
 from copy import deepcopy
-import warnings
 import torch
 import numpy as np
 import os
@@ -14,26 +12,6 @@ import os
 
 __all__ = ["DistributedSimulation", "DistributedStreaming", "DistributedStreamcolliding"]
 
-"""
-def reassemble(flow, lattice, tensor, rank, size):
-    if rank == 0:
-        assembly = tensor
-        for i in range(1, size):
-            if len(tensor.shape) > len(flow.grid[0].shape):
-                input = torch.zeros([tensor.shape[0]] + list(flow.grid[0].shape), device=lattice.device, dtype=lattice.dtype)[:, int(np.floor(flow.grid[0].shape[0] * i / size)):int(np.floor(flow.grid[0].shape[0] * (i + 1) / size)), ...].contiguous()
-                dist.recv(tensor=input, src=i)
-                assembly = torch.cat((assembly, input), dim=1)
-            else:
-                input = torch.zeros(list(flow.grid[0].shape), device=lattice.device, dtype=lattice.dtype)[int(np.floor(flow.grid[0].shape[0] * i / size)):int(np.floor(flow.grid[0].shape[0] * (i + 1) / size)), ...].contiguous()
-                dist.recv(tensor=input, src=i)
-                assembly = torch.cat((assembly, input), dim=0)
-        return assembly
-    else:
-        output = tensor.contiguous().to(torch.device("cpu"))
-        dist.send(tensor=output,
-                  dst=0)
-        return 1
-"""
 
 class DistributedSimulation(Simulation):
 
@@ -47,11 +25,8 @@ class DistributedSimulation(Simulation):
         self.streaming = streaming
         self.i = 0
 
-        self.index = [flow.grid.index, ...] #[slice(int(np.floor(flow.grid()[0].shape[0]*rank/size)),int(np.floor(flow.grid()[0].shape[0]*(rank+1)/size))) ,...]
+        self.index = [flow.grid.index, ...]
 
-
-        #grid = [x[int(np.floor(flow.grid[0].shape[0]*rank/size)):int(np.floor(flow.grid[0].shape[0]*(rank+1)/size)),...] for x in flow.grid]
-        #grid = flow.grid() #[x[tuple(self.index)] for x in flow.grid]
         print(flow.grid.shape)
         print(f"Process {self.rank} covers {self.index}")
         p, u = flow.initial_solution(flow.grid())
@@ -282,25 +257,6 @@ class DistributedStreaming(StandardStreaming):
         else:
             return torch.roll(f[i], shifts=tuple(self.lattice.stencil.e[i]), dims=tuple(np.arange(self.lattice.D)))
 
-"""
-class DistributedLattice(Lattice):
-
-    def __init__(self, stencil, deviceIn, dtype=torch.float):
-        self.stencil = stencil
-        self._device = deviceIn
-        self.dtype = dtype
-        self.e = self.convert_to_tensor(stencil.e)
-        self.w = self.convert_to_tensor(stencil.w)
-        self.cs = self.convert_to_tensor(stencil.cs)
-        self.equilibrium = QuadraticEquilibrium(self)
-
-    @property
-    def device(self):
-        if self._device.type == "cuda":
-            return torch.device(f"cuda:{torch.distributed.get_rank()}")
-        else:
-            return self._device
-"""
 
 class DistributedStreamcolliding(object):
 

@@ -36,9 +36,6 @@ class RegularGrid(object):
         --reassemble:
         Inputs:
         tensor: tensor to be reassembled (pytorch tensor that is present on all processes)
-        lattice: lattice
-        rank: rank of the process calling the function
-        size: total number of processes
 
         Output:
         on process with rank 0: the whole tensor (of the full domain)
@@ -94,7 +91,7 @@ class RegularGrid(object):
         else:
             return tensor[index, ...]
 
-    def reassemble(self, tensor, lattice):
+    def reassemble(self, tensor):
         """recombines tensor that is spread to all processes in process 0
         (should just return tensor if only one process exists)"""
         if self.rank == 0:
@@ -102,12 +99,12 @@ class RegularGrid(object):
             for i in range(1, self.size):
                 if len(tensor.shape) > len(self.shape):
                     input = self.select(torch.zeros([tensor.shape[0]] + self.resolution,
-                                                    device=lattice.device, dtype=lattice.dtype), rank=i).contiguous()
+                                                    device=tensor.device, dtype=tensor.dtype), rank=i).contiguous()
                     dist.recv(tensor=input, src=i)
                     assembly = torch.cat((assembly, input), dim=1)
                 else:
                     input = self.select(torch.zeros(self.resolution,
-                                                    device=lattice.device, dtype=lattice.dtype), rank=i).contiguous()
+                                                    device=tensor.device, dtype=tensor.dtype), rank=i).contiguous()
                     dist.recv(tensor=input, src=i)
                     assembly = torch.cat((assembly, input), dim=0)
             return assembly
