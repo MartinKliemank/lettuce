@@ -1,6 +1,6 @@
 import torch
 
-__all__ = ["Equilibrium", "QuadraticEquilibrium", "IncompressibleQuadraticEquilibrium", "QuadraticEquilibrium_MemorySaver"]
+__all__ = ["Equilibrium", "QuadraticEquilibrium", "IncompressibleQuadraticEquilibrium", "QuadraticEquilibrium_LessMemory"]
 
 
 class Equilibrium():
@@ -21,13 +21,13 @@ class QuadraticEquilibrium(Equilibrium):
         )
         return feq
 
-class QuadraticEquilibrium_MemorySaver(QuadraticEquilibrium):
+class QuadraticEquilibrium_LessMemory(QuadraticEquilibrium):
     """does the same as the normal equilibrium, how ever it uses somewhere around 20% less RAM,
     but runs about 2% slower on GPU and 11% on CPU
 
     Use this by setting
-    lattice.equilibrium = QuadraticEquilibrium_MemorySaver(lattice)
-    before the start fo your simulation
+    lattice.equilibrium = QuadraticEquilibrium_LessMemory(lattice)
+    before starting your simulation
     """
     def __call__(self, rho, u, *args):
         return self.lattice.einsum(
