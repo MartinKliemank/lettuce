@@ -22,7 +22,7 @@ class QuadraticEquilibrium(Equilibrium):
         return feq
 
 class QuadraticEquilibrium_MemorySaver(QuadraticEquilibrium):
-    """does the same as the normal equilibrium, how ever it uses something around 20% less RAM,
+    """does the same as the normal equilibrium, how ever it uses somewhere around 20% less RAM,
     but runs about 2% slower on GPU and 11% on CPU
 
     Use this by setting

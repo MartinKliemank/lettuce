@@ -21,7 +21,7 @@ from lettuce import (LettuceException)
 
 
 __all__ = ["BounceBackBoundary", "AntiBounceBackOutlet", "EquilibriumBoundaryPU", "EquilibriumOutletP",
-           "ZeroGradientOutlet"]
+           "ZeroGradientOutlet", "BounceBackVelocityInlet"]
 
 
 class DirectionalBoundary(object):
@@ -194,6 +194,7 @@ class ZeroGradientOutlet(object):
         no_stream_mask[[self.velocities] + self.index] = 1
         return no_stream_mask
 
+
 class BounceBackVelocityInlet(object):
     """Allows distributions to enter domain with set speed through this boundary.
         Based on equations from page 195 of "The lattice Boltzmann method" (2016 by Krüger et al.)
@@ -202,13 +203,13 @@ class BounceBackVelocityInlet(object):
         [0, -1, 0] is negative y-direction in 3D; [0, -1] for the same in 2D
         """
 
-    def __init__(self, lattice, direction, velocity_lu):
+    def __init__(self, lattice, units, direction, velocity_pu):
         assert (isinstance(direction, list) and len(direction) in [1,2,3] and ((np.abs(sum(direction)) == 1) and (np.max(np.abs(direction)) == 1) and (1 in direction) ^ (-1 in direction))), \
             LettuceException("Wrong direction. Expected list of length 1, 2 or 3 with all entrys 0 except one 1 or -1, "
                                 f"but got {type(direction)} of size {len(direction)} and entrys {direction}.")
         self.direction = np.array(direction)
         self.lattice = lattice
-        self.velocity_lu = velocity_lu
+        self.velocity_lu = units.convert_velocity_to_lu(self.lattice.convert_to_tensor(velocity_pu))
 
         #select velocities to be bounced (the ones pointing in "direction")
         self.velocities_out = np.concatenate(np.argwhere(np.matmul(self.lattice.stencil.e, self.direction) > 1 - 1e-6), axis=0)
@@ -231,14 +232,13 @@ class BounceBackVelocityInlet(object):
 
     def __call__(self, f):
         rho = self.lattice.rho(f)
-        rho_w = rho[self.index] + 0.5 * (rho[self.index] - rho[self.neighbor])
+        rho_w = rho[[slice(None)] + self.index] + 0.5 * (rho[[slice(None)] + self.index] - rho[[slice(None)] + self.neighbor])
         f[[self.velocities_in] + self.index] = (
-                f[[self.velocities_out] + self.index] - 2 * self.lattice.w[self.velocities_out] * rho_w *
-                self.lattice.e[self.velocities_out] * self.velocity_lu / self.lattice.cs ** 2
+                f[[self.velocities_out] + self.index] - 2 * rho_w * (self.lattice.w[self.velocities_out] * torch.matmul(self.lattice.e[self.velocities_out],self.velocity_lu) / self.lattice.cs ** 2).view(3, 1)
         )
         return f
 
     def make_no_stream_mask(self, f_shape):
         no_stream_mask = torch.zeros(size=f_shape, dtype=torch.bool, device=self.lattice.device)
-        no_stream_mask[[np.array(self.lattice.stencil.opposite)[self.velocities_in]] + self.index] = 1
+        no_stream_mask[[self.velocities_in] + self.index] = 1
         return no_stream_mask
