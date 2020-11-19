@@ -31,8 +31,9 @@ class DirectionalBoundary(object):
 class ObjectBoundary(object):
     pass
 
+"""
 class BounceBackBoundary:
-    """Fullway Bounce-Back Boundary"""
+    ""Fullway Bounce-Back Boundary""
     def __init__(self, mask, lattice):
         self.mask = lattice.convert_to_tensor(mask)
         self.lattice = lattice
@@ -44,7 +45,55 @@ class BounceBackBoundary:
     def make_no_collision_mask(self, grid_shape):
         assert self.mask.shape == grid_shape
         return self.mask
+"""
 
+class BounceBackBoundary:
+    """Fullway Bounce-Back Boundary"""
+    def __init__(self, mask, lattice):
+        self.mask = lattice.convert_to_tensor(mask)
+        self.lattice = lattice
+
+        self.output_force = False
+        self.force = torch.zeros_like(self.lattice.convert_to_tensor(self.lattice.stencil.e[0]))
+        if lattice.D == 2:
+            x, y = mask.shape
+            self.force_mask = np.zeros((lattice.Q, x, y), dtype=bool)
+            a, b = np.where(mask)
+            for p in range(0, len(a)):
+                for i in range(0, lattice.Q):
+                    try:  # try in case the neighboring cell does not exist (an f pointing out of simulation domain)
+                        if not mask[a[p] + lattice.stencil.e[i, 0], b[p] + lattice.stencil.e[i, 1]]:
+                            self.force_mask[self.lattice.stencil.opposite[i], a[p], b[p]] = 1
+                    except IndexError:
+                        pass  # just ignore this iteration since there is no neighbor there
+        if lattice.D == 3:
+            x, y, z = mask.shape
+            self.force_mask = np.zeros((lattice.Q, x, y, z), dtype=bool)
+            a, b, c = np.where(mask)
+            for p in range(0, len(a)):
+                for i in range(0, lattice.Q):
+                    try:  # try in case the neighboring cell does not exist (an f pointing out of simulation domain)
+                        if not mask[a[p] + lattice.stencil.e[i, 0], b[p] + lattice.stencil.e[i, 1], c[p] + lattice.stencil.e[i, 2]]:
+                            self.force_mask[self.lattice.stencil.opposite[i], a[p], b[p], c[p]] = 1
+                    except IndexError:
+                        pass  # just ignore this iteration since there is no neighbor there
+
+        self.force_mask = self.lattice.convert_to_tensor(self.force_mask)
+
+    def __call__(self, f):
+        if self.output_force:
+            tmp = torch.where(self.force_mask, f, torch.zeros_like(f))
+            #self.force = 1 ** self.lattice.D * 2 * torch.einsum('ixyz, id -> d', sum, self.lattice.e) / 1.0
+            tmp = torch.einsum("i..., id -> d...", tmp, self.lattice.e)
+            for _ in range(0, self.lattice.D):
+                tmp = torch.sum(tmp, dim=1)
+            self.force = tmp * 2
+        f = torch.where(self.mask, f[self.lattice.stencil.opposite], f)
+        return f
+
+    def make_no_collision_mask(self, f_shape):
+        assert self.mask.shape == f_shape[1:]
+        return self.mask
 
 class EquilibriumBoundaryPU:
     """Sets distributions on this boundary to equilibrium with predefined velocity and pressure.
