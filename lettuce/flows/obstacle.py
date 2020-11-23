@@ -220,3 +220,7 @@ class House3D(object):
                 except IndexError:
                     pass  # just ignore this iteration since there is no neighbor there
         return inside_mask, outgoing_mask
+
+    def wind_speed_profile(self, steps, u_fric, d, z_0):
+        # based on wikipedia article about log wind profile
+        return u_fric / 0.4 * np.ln(np.linspace(0, steps, steps) - d / z_0)

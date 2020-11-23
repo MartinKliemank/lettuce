@@ -127,7 +127,7 @@ class DragCoefficient(Observable):
                 self.boundary.append(boundary)
 
     def __call__(self, f):
-        rho = 1.0 #torch.mean(self.lattice.rho(f[:, 0, ...]))
+        rho = torch.mean(self.lattice.rho(f[:, 0, ...]))
         Fw = self.boundary[0].force[0]
         #f = torch.where(self.mask, f, torch.zeros_like(f))
         #f[0, ...] = 0
