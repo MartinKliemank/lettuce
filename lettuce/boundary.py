@@ -401,17 +401,19 @@ class NonEquilibriumExtrapolationInletU(object):
             if i == -1:
                 self.index.append(0)
                 self.neighbor.append(1)
-        self.rho_old = 0
+        self.rho_old = 1.0
 
     def __call__(self, f):
-        Tc = 0.1
+        Tc = 10
         here = [slice(None)] + self.index
         other = [slice(None)] + self.neighbor
         u = self.lattice.convert_to_tensor(self.lattice.u(f[other + [None]]))
         rho = self.lattice.convert_to_tensor(self.lattice.rho(f[other + [None]]))
-        u_w = self.u_w.unsqueeze(1).repeat(1, f.shape[np.argwhere(self.direction != 0)[0][0] + 1]).unsqueeze(2)
+        u_w = self.u_w.unsqueeze(1).repeat(1, f.shape[np.argwhere(self.direction == 0)[0][0] + 1]).unsqueeze(2)
+        rho_self = 1 / (1 - u_w[np.argwhere(self.direction != 0)[0][0]] / self.lattice.e[self.velocities_in[0], np.argwhere(self.direction != 0)[0][0]]) * (
+            torch.sum(f[[np.setdiff1d(np.arange(self.lattice.Q), [self.velocities_in, self.velocities_out])] + self.index] + 2 * f[[self.velocities_out] + self.index], dim=0)).unsqueeze(1)
         # desnity filtering as proposed by https://www.researchgate.net/publication/257389374_Computational_Gas_Dynamics_with_the_Lattice_Boltzmann_Method_Preconditioning_and_Boundary_Conditions
-        rho_w = (rho + Tc * self.rho_old) / (1+Tc)
+        rho_w = (rho_self + Tc * self.rho_old) / (1+Tc)
         self.rho_old = rho_w
         f[here] = self.lattice.equilibrium(rho_w, u_w).squeeze(2) + (f[other] - self.lattice.equilibrium(rho, u).squeeze(2))
         return f
@@ -421,15 +423,3 @@ class NonEquilibriumExtrapolationInletU(object):
         no_stream_mask[[self.velocities_in] + self.index] = 1
         return no_stream_mask
 
-"""save:
-
-    def __call__(self, f):
-        Wc = 5000
-        rho = self.lattice.rho(f[[slice(None)] + self.neighbor])
-        rho_w = (Wc * self.units.convert_time_to_pu(1) * rho + 1 * self.rho_old) / (1 + Wc * self.units.convert_time_to_pu(1))
-            #torch.mean(rho) #rho[[slice(None)] + self.index] + 0.5 * (rho[[slice(None)] + self.index] - rho[[slice(None)] + self.neighbor])  # extrapolation of rho_w from density at boundary and neighbour node, hopefully better than global average / 1
-        f[[self.velocities_in] + self.index] = (
-                f[[self.velocities_out] + self.index] - 2 * rho_w * (self.lattice.w[self.velocities_out] * torch.matmul(self.lattice.e[self.velocities_out], self.velocity_lu) / self.lattice.cs ** 2).view(3, 1)
-        )
-        self.rho_old = self.lattice.rho(f[[slice(None)] + self.index])
-"""
