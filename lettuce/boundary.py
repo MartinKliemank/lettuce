@@ -305,17 +305,13 @@ class BounceBackVelocityInlet(object):
             if i == -1:
                 self.index.append(0)
                 self.neighbor.append(1)
-        self.rho_old = 0
 
     def __call__(self, f):
-        Wc = 5000
         rho = self.lattice.rho(f[[slice(None)] + self.neighbor])
-        rho_w = (Wc * self.units.convert_time_to_pu(1) * rho + 1 * self.rho_old) / (1 + Wc * self.units.convert_time_to_pu(1))
-            #torch.mean(rho) #rho[[slice(None)] + self.index] + 0.5 * (rho[[slice(None)] + self.index] - rho[[slice(None)] + self.neighbor])  # extrapolation of rho_w from density at boundary and neighbour node, hopefully better than global average / 1
+        rho_w = torch.mean(rho) #rho[[slice(None)] + self.index] + 0.5 * (rho[[slice(None)] + self.index] - rho[[slice(None)] + self.neighbor])  # extrapolation of rho_w from density at boundary and neighbour node, hopefully better than global average / 1
         f[[self.velocities_in] + self.index] = (
                 f[[self.velocities_out] + self.index] - 2 * rho_w * (self.lattice.w[self.velocities_out] * torch.matmul(self.lattice.e[self.velocities_out], self.velocity_lu) / self.lattice.cs ** 2).view(3, 1)
         )
-        self.rho_old = self.lattice.rho(f[[slice(None)] + self.index])
         return f
 
     def make_no_stream_mask(self, f_shape):
