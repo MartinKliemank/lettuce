@@ -44,10 +44,11 @@ class VTKReporter:
         self.flow = flow
         self.interval = interval
         self.filename_base = filename_base
-        directory = os.path.dirname(filename_base)
-        if not os.path.isdir(directory):
-            os.mkdir(directory)
         self.point_dict = dict()
+        if self.flow.grid.rank == 0:
+            directory = os.path.dirname(filename_base)
+            if not os.path.isdir(directory):
+                os.mkdir(directory)
 
     def __call__(self, i, t, f):
         if i % self.interval == 0:
