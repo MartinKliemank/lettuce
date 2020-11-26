@@ -81,7 +81,7 @@ class DistributedSimulation(Simulation):
                         elif boundary.direction[0] == 0:
                             self.f = boundary(self.f)
                     else:
-                        self.f = boundary(self.f)
+                        self.f = boundary(self.f, self.flow.grid.index)
             self._report()
         end = timer()
         seconds = end - start
