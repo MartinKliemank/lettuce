@@ -8,9 +8,51 @@ from copy import deepcopy
 import torch
 import numpy as np
 import os
+from torch.multiprocessing import Process
 
 
-__all__ = ["DistributedSimulation", "DistributedStreaming", "DistributedStreamcolliding"]
+__all__ = ["DistributedSimulation", "DistributedStreaming", "DistributedStreamcolliding", "distribute"]
+
+def _init_processes(device, rank, size, fn, backend='tcp'):
+    """ Initialize the distributed environment. """
+    dist.init_process_group(backend)
+    print(f"Process {rank} of {size} starting up!")
+
+    if device.type == "cuda" and torch.cuda.device_count() >= size:
+        torch.cuda.set_device(rank)
+        device = torch.device(f"cuda:{rank}")
+        print(f"Process {rank} using device {device}")
+
+    fn(device, rank, size)
+
+def _init_process(device, rank, size, fn, backend='gloo'):
+    """ Initialize the distributed environment. """
+    os.environ['MASTER_ADDR'] = '127.0.0.1'
+    os.environ['MASTER_PORT'] = '29500'
+    dist.init_process_group(backend, rank=rank, world_size=size)
+    fn(device, rank, size)
+
+def distribute(function, size, device, backend="gloo"):
+    assert backend == "gloo" or backend == "mpi", \
+            LettuceException(f"Wrong backend {backend} for distribute, only 'gloo' and 'mpi' are supported.")
+    if device.type == "cuda":
+        assert backend == "mpi", \
+        LettuceException(f"Wrong backend {backend} for use of distribute with cuda, only 'mpi' is supported.")
+
+    if backend == "mpi":
+        world_size = int(os.environ['OMPI_COMM_WORLD_SIZE'])
+        world_rank = int(os.environ['OMPI_COMM_WORLD_RANK'])
+        _init_processes(device, world_rank, world_size, function, backend='mpi')
+
+    if backend == "gloo":
+        processes = []
+        for rank in range(size):
+            p = Process(target=_init_process, args=(device, rank, size, function))
+            p.start()
+            processes.append(p)
+
+        for p in processes:
+            p.join()
 
 
 class DistributedSimulation(Simulation):
@@ -106,6 +148,7 @@ class DistributedSimulation(Simulation):
         filename = os.path.join(folder, file)
         with open(filename, "rb") as fp:
             self.f = pickle.load(fp)
+
 
 class DistributedStreaming(StandardStreaming):
     """Standard streaming for distributed simulation, domain is separated along 0th (x)-dimension"""
