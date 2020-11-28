@@ -108,6 +108,6 @@ class RegularGrid(object):
                     assembly = torch.cat((assembly, input), dim=0)
             return assembly
         else:
-            output = tensor.contiguous()#.to(torch.device("cpu"))
+            output = tensor.contiguous()
             dist.send(tensor=output, dst=0)
             return 1

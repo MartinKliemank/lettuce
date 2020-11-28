@@ -115,7 +115,7 @@ class DistributedSimulation(Simulation):
                 self.f = torch.where(self.no_collision_mask, self.f, self.collision(self.f))
                 for boundary in self._boundaries:
                     # Unterscheidung in "has direction" und has mask -> indices vs. ifs
-                    if isinstance(boundary, AntiBounceBackOutlet):
+                    if hasattr(boundary, "direction"):
                         if boundary.direction[0] == -1 and self.rank == 0:
                             self.f = boundary(self.f)
                         elif boundary.direction[0] == 1 and self.rank == self.size - 1:
