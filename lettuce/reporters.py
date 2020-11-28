@@ -68,7 +68,7 @@ class VTKReporter:
     def output_mask(self, no_collision_mask):
         """Outputs the no_collision_mask of the simulation object as VTK-file with range [0,1]
         Usage: vtk_reporter.output_mask(simulation.no_collision_mask)"""
-        mask = self.flow.grid.reassemble(no_collision_mask)
+        mask = self.flow.grid.reassemble(no_collision_mask.byte())
         point_dict = dict()
         if self.flow.grid.rank == 0:
             if self.lattice.D == 2:
