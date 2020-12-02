@@ -368,10 +368,10 @@ class NonEquilibriumExtrapolationOutlet(object):
         f[here] = self.lattice.equilibrium(rho_w, u_w).squeeze(2) + (f[other] - self.lattice.equilibrium(rho, u).squeeze(2))
         return f
 
-    def make_no_stream_mask(self, f_shape):
-        no_stream_mask = torch.zeros(size=f_shape, dtype=torch.bool, device=self.lattice.device)
-        no_stream_mask[[self.velocities_in] + self.index] = 1
-        return no_stream_mask
+   # def make_no_stream_mask(self, f_shape):
+   #     no_stream_mask = torch.zeros(size=f_shape, dtype=torch.bool, device=self.lattice.device)
+   #     no_stream_mask[[self.velocities_in] + self.index] = 1
+   #     return no_stream_mask
 
 class NonEquilibriumExtrapolationInletU(object):
     """ Zou's boundary condition
