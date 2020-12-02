@@ -357,15 +357,15 @@ class NonEquilibriumExtrapolationOutlet(object):
     def __call__(self, f):
         here = [slice(None)] + self.index
         other = [slice(None)] + self.neighbor
-        u = self.lattice.convert_to_tensor(self.lattice.u(f[other + [None]]))
+        u = self.lattice.convert_to_tensor(self.lattice.u(f[other]))
         u_w = u.detach().clone()
         # smart (?) methode to find velocity orthogonal to boundary... doesnt help for parallel velocity though
-        u_w[np.argwhere(self.direction != 0)[0][0]] = self.lattice.e[self.velocities_in[0], np.argwhere(self.direction != 0)[0][0]] * (1 - 1 / self.rho_w * (
+        u_w[np.argwhere(self.direction != 0).item()] = self.lattice.e[self.velocities_in[0], np.argwhere(self.direction != 0).item()] * (1 - 1 / self.rho_w * (
             torch.sum(f[[np.setdiff1d(np.arange(self.lattice.Q), [self.velocities_in, self.velocities_out])] + self.index]
-                      + 2 * f[[self.velocities_out] + self.index], dim=0))).unsqueeze(1)
-        rho = self.lattice.convert_to_tensor(self.lattice.rho(f[other + [None]]))
+                      + 2 * f[[self.velocities_out] + self.index], dim=0)))
+        rho = self.lattice.convert_to_tensor(self.lattice.rho(f[other]))
         rho_w = self.rho_w * torch.ones_like(rho)
-        f[here] = self.lattice.equilibrium(rho_w, u_w).squeeze(2) + (f[other] - self.lattice.equilibrium(rho, u).squeeze(2))
+        f[here] = self.lattice.equilibrium(rho_w, u_w) + (f[other] - self.lattice.equilibrium(rho, u))
         return f
 
    # def make_no_stream_mask(self, f_shape):
