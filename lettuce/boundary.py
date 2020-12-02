@@ -407,21 +407,24 @@ class NonEquilibriumExtrapolationInletU(object):
         Tc = 10
         here = [slice(None)] + self.index
         other = [slice(None)] + self.neighbor
-        u = self.lattice.convert_to_tensor(self.lattice.u(f[other + [None]]))
-        rho = self.lattice.convert_to_tensor(self.lattice.rho(f[other + [None]]))
-        u_w = self.u_w.unsqueeze(1).repeat(1, f.shape[np.argwhere(self.direction == 0)[0][0] + 1]).unsqueeze(2)
-        rho_self = 1 / (1 - u_w[np.argwhere(self.direction != 0)[0][0]] / self.lattice.e[self.velocities_in[0], np.argwhere(self.direction != 0)[0][0]]) * (
-            torch.sum(f[[np.setdiff1d(np.arange(self.lattice.Q), [self.velocities_in, self.velocities_out])] + self.index] + 2 * f[[self.velocities_out] + self.index], dim=0)).unsqueeze(1)
+        u = self.lattice.convert_to_tensor(self.lattice.u(f[other]))
+        rho = self.lattice.convert_to_tensor(self.lattice.rho(f[other]))
+        list = []
+        for _ in u.shape: list += [1]
+        list[0] = len(self.u_w)
+        u_w = self.u_w.view(list).expand_as(u)
+        rho_self = 1 / (1 - u_w[np.argwhere(self.direction != 0).item()] / self.lattice.e[self.velocities_in[0], np.argwhere(self.direction != 0).item()]) * (
+            torch.sum(f[[np.setdiff1d(np.arange(self.lattice.Q), [self.velocities_in, self.velocities_out])] + self.index] + 2 * f[[self.velocities_out] + self.index], dim=0))
         # desnity filtering as proposed by https://www.researchgate.net/publication/257389374_Computational_Gas_Dynamics_with_the_Lattice_Boltzmann_Method_Preconditioning_and_Boundary_Conditions
         rho_w = (rho_self + Tc * self.rho_old) / (1+Tc)
         self.rho_old = rho_w
-        f[here] = self.lattice.equilibrium(rho_w, u_w).squeeze(2) + (f[other] - self.lattice.equilibrium(rho, u).squeeze(2))
+        f[here] = self.lattice.equilibrium(rho_w, u_w) + (f[other] - self.lattice.equilibrium(rho, u))
         return f
 
-    def make_no_stream_mask(self, f_shape):
-        no_stream_mask = torch.zeros(size=f_shape, dtype=torch.bool, device=self.lattice.device)
-        no_stream_mask[[self.velocities_in] + self.index] = 1
-        return no_stream_mask
+    #def make_no_stream_mask(self, f_shape):
+    #    no_stream_mask = torch.zeros(size=f_shape, dtype=torch.bool, device=self.lattice.device)
+    #    no_stream_mask[[self.velocities_in] + self.index] = 1
+    #    return no_stream_mask
 
 class ConvectiveBoundaryOutlet(object):
     """convective boundary as described in: https://www.sciencedirect.com/science/article/pii/S0898122112006736#br000045
@@ -472,3 +475,56 @@ class ConvectiveBoundaryOutlet(object):
         no_stream_mask = torch.zeros(size=f_shape, dtype=torch.bool, device=self.lattice.device)
         no_stream_mask[[self.velocities_in] + self.index] = 1
         return no_stream_mask
+
+class HalfWayBounceBackObject:
+    """Halfway Bounce-Back Boundary around object mask"""
+    def __init__(self, mask, lattice):
+        self.obstacle = lattice.convert_to_tensor(mask)
+        self.lattice = lattice
+        self.output_force = False
+        self.force = torch.zeros_like(self.lattice.convert_to_tensor(self.lattice.stencil.e[0]))
+        """make masks for fs to be bounced / not streamed by going over all obstacle points and 
+        following all e_i's to find neighboring points and which of their fs point towards the obstacle 
+        (fs pointing to obstacle are added to no_stream_mask, fs pointing away are added to bouncedFs)"""
+        if lattice.D == 2:
+            x, y = mask.shape
+            self.mask = np.zeros((lattice.Q, x, y), dtype=bool)
+            a, b = np.where(mask)
+            for p in range(0, len(a)):
+                for i in range(0, lattice.Q):
+                    try:  # try in case the neighboring cell does not exist (an f pointing out of simulation domain)
+                        if not mask[a[p] + lattice.stencil.e[i, 0], b[p] + lattice.stencil.e[i, 1]]:
+                            self.mask[i, a[p] + lattice.stencil.e[i, 0], b[p] + lattice.stencil.e[i, 1]] = 1
+                    except IndexError:
+                        pass  # just ignore this iteration since there is no neighbor there
+        if lattice.D == 3:
+            x, y, z = mask.shape
+            self.mask = np.zeros((lattice.Q, x, y, z), dtype=bool)
+            a, b, c = np.where(mask)
+            for p in range(0, len(a)):
+                for i in range(0, lattice.Q):
+                    try:  # try in case the neighboring cell does not exist (an f pointing out of simulation domain)
+                        if not mask[a[p] + lattice.stencil.e[i, 0], b[p] + lattice.stencil.e[i, 1], c[p] + lattice.stencil.e[i, 2]]:
+                            self.mask[i, a[p] + lattice.stencil.e[i, 0], b[p] + lattice.stencil.e[i, 1], c[p] + lattice.stencil.e[i, 2]] = 1
+                    except IndexError:
+                        pass  # just ignore this iteration since there is no neighbor there
+
+        self.mask = self.lattice.convert_to_tensor(self.mask)
+
+    def __call__(self, f):
+        f = torch.where(self.mask, f[self.lattice.stencil.opposite], f)
+        if self.output_force:
+            tmp = torch.where(self.mask, f, torch.zeros_like(f))
+            tmp = torch.einsum("i..., id -> d...", tmp, self.lattice.e[self.lattice.stencil.opposite])
+            for _ in range(0, self.lattice.D):
+                tmp = torch.sum(tmp, dim=1)
+            self.force = 2 * tmp
+        return f
+
+    def make_no_stream_mask(self, f_shape):
+        assert self.obstacle.shape == f_shape[1:]
+        return self.obstacle | self.mask
+
+    def make_no_collision_mask(self, f_shape):
+        assert self.obstacle.shape == f_shape[1:]
+        return self.obstacle

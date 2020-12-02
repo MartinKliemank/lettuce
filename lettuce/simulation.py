@@ -82,6 +82,8 @@ class Simulation:
             #Perform the collision routine everywhere, expect where the no_collision_mask is true
             self.f = torch.where(self.no_collision_mask, self.f, self.collision(self.f))
             self._report()
+            if torch.isnan(self.f).any():
+                return None
         end = timer()
         seconds = end-start
         num_grid_points = self.lattice.rho(self.f).numel()
