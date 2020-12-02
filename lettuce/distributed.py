@@ -1,7 +1,7 @@
 import torch.distributed as dist
 from timeit import default_timer as timer
 from lettuce import (
-    LettuceException, StandardStreaming, Simulation, AntiBounceBackOutlet
+    LettuceException, StandardStreaming, Simulation
 )
 import pickle
 from copy import deepcopy

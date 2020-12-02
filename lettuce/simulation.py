@@ -2,7 +2,7 @@
 
 from timeit import default_timer as timer
 from lettuce import (
-    LettuceException, get_default_moment_transform, BGKInitialization, ExperimentalWarning, torch_gradient, NonEquilibriumExtrapolationInletU
+    LettuceException, get_default_moment_transform, BGKInitialization, ExperimentalWarning, torch_gradient, NonEquilibriumExtrapolationInletU, ConvectiveBoundaryOutlet
 )
 from lettuce.util import pressure_poisson
 import pickle
@@ -66,13 +66,19 @@ class Simulation:
             self._report()
         for _ in range(num_steps):
             self.i += 1
-            for boundary in self._boundaries:
-                if not isinstance(boundary, NonEquilibriumExtrapolationInletU):
-                    self.f = boundary(self.f)
+            #for boundary in self._boundaries:
+                #if hasattr(boundary, "make_no_stream_mask") and not isinstance(boundary, NonEquilibriumExtrapolationInletU):
+                #    save = boundary(self.f)
+                #elif not isinstance(boundary, NonEquilibriumExtrapolationInletU):
+                #    #self.f = boundary(self.f)
+                 #   pass
+            pre_stream_f = self.f
             self.f = self.streaming(self.f)
             for boundary in self._boundaries:
-                if isinstance(boundary, NonEquilibriumExtrapolationInletU):
+                if not hasattr(boundary, "make_no_stream_mask"):#isinstance(boundary, NonEquilibriumExtrapolationInletU):
                     self.f = boundary(self.f)
+                elif hasattr(boundary, "make_no_stream_mask"):
+                    self.f = torch.where(boundary.make_no_stream_mask(self.f.shape), boundary(pre_stream_f), self.f)
             #Perform the collision routine everywhere, expect where the no_collision_mask is true
             self.f = torch.where(self.no_collision_mask, self.f, self.collision(self.f))
             self._report()
