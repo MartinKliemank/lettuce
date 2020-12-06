@@ -39,11 +39,12 @@ def write_vtk(point_dict, id=0, filename_base="./data/output"):
 
 class VTKReporter:
     """General VTK Reporter for velocity and pressure"""
-    def __init__(self, lattice, flow, interval=50, filename_base="./data/output"):
+    def __init__(self, lattice, flow, interval=50, filename_base="./data/output", nan_out=False):
         self.lattice = lattice
         self.flow = flow
         self.interval = interval
         self.filename_base = filename_base
+        self.nan_out = nan_out
         self.point_dict = dict()
         if self.flow.grid.rank == 0:
             directory = os.path.dirname(filename_base)
@@ -54,7 +55,20 @@ class VTKReporter:
         if i % self.interval == 0:
             u = self.flow.grid.reassemble(self.flow.units.convert_velocity_to_pu(self.lattice.u(f)))
             p = self.flow.grid.reassemble(self.flow.units.convert_density_lu_to_pressure_pu(self.lattice.rho(f)))
+
             if self.flow.grid.rank == 0:
+                if torch.isnan(p).any() and self.nan_out:
+                    point_dict = dict()
+                    nan = torch.isnan(p[0, ...])
+                    if self.lattice.D == 2:
+                        point_dict["nan"] = self.lattice.convert_to_numpy(nan)[..., None].astype(int)
+                    else:
+                        point_dict["nan"] = self.lattice.convert_to_numpy(nan).astype(int)
+                    vtk.gridToVTK(self.filename_base + "_nan",
+                                  np.arange(0, point_dict["nan"].shape[0]),
+                                  np.arange(0, point_dict["nan"].shape[1]),
+                                  np.arange(0, point_dict["nan"].shape[2]),
+                                  pointData=point_dict)
                 if self.lattice.D == 2:
                     self.point_dict["p"] = self.lattice.convert_to_numpy(p[0, ..., None])
                     for d in range(self.lattice.D):
