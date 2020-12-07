@@ -64,7 +64,7 @@ class VTKReporter:
                         point_dict["nan"] = self.lattice.convert_to_numpy(nan)[..., None].astype(int)
                     else:
                         point_dict["nan"] = self.lattice.convert_to_numpy(nan).astype(int)
-                    vtk.gridToVTK(self.filename_base + "_nan",
+                    vtk.gridToVTK(f"{self.filename_base}_{i:08d}_nan",
                                   np.arange(0, point_dict["nan"].shape[0]),
                                   np.arange(0, point_dict["nan"].shape[1]),
                                   np.arange(0, point_dict["nan"].shape[2]),
