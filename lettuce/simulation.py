@@ -58,6 +58,7 @@ class Simulation:
                 no_stream_mask = no_stream_mask | boundary.make_no_stream_mask(torch.Size([lattice.Q]+list(flow.grid.global_shape)))
         if no_stream_mask.any():
             self.streaming.no_stream_mask = no_stream_mask
+        self.nan_cnt = 0
 
     def step(self, num_steps):
         """Take num_steps stream-and-collision steps and return performance in MLUPS."""
@@ -83,7 +84,9 @@ class Simulation:
             self.f = torch.where(self.no_collision_mask, self.f, self.collision(self.f))
             self._report()
             if torch.isnan(self.f).any():
-                return None
+                self.nan_cnt += 1
+                if self.nan_cnt > 100:
+                    return None
         end = timer()
         seconds = end-start
         num_grid_points = self.lattice.rho(self.f).numel()
