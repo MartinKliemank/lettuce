@@ -22,7 +22,8 @@ from lettuce import (LettuceException)
 
 __all__ = ["BounceBackBoundary", "AntiBounceBackOutlet", "EquilibriumBoundaryPU", "EquilibriumOutletP",
            "ZeroGradientOutlet", "BounceBackVelocityInlet", "EquilibriumExtrapolationOutlet",
-           "NonEquilibriumExtrapolationOutlet", "NonEquilibriumExtrapolationInletU", "ConvectiveBoundaryOutlet"]
+           "NonEquilibriumExtrapolationOutlet", "NonEquilibriumExtrapolationInletU", "ConvectiveBoundaryOutlet",
+           "HalfWayBounceBackWall", "HalfWayBounceBackObject"]
 
 
 class DirectionalBoundary(object):
