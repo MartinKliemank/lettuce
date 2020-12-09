@@ -534,3 +534,33 @@ class HalfWayBounceBackObject:
     def make_no_collision_mask(self, f_shape):
         assert self.obstacle.shape == f_shape[1:]
         return self.obstacle
+
+class HalfWayBounceBackWall:
+    """Halfway Bounce-Back Boundary on side of the domain (0 thickness)"""
+    def __init__(self, direction, lattice):
+        self.lattice = lattice
+        direction = np.array(direction)
+
+        # select velocities to be bounced (the ones pointing in "direction")
+        velocities = np.concatenate(np.argwhere(np.matmul(self.lattice.stencil.e, direction) > 1 - 1e-6), axis=0)
+        index = []
+        for i in direction:
+            if i == 0:
+                index.append(slice(None))
+            if i == 1:
+                index.append(-1)
+            if i == -1:
+                index.append(0)
+
+        self.bounced = [np.array(self.lattice.stencil.opposite)[velocities]] + index
+        self.outgoing = [velocities] + index
+
+    def __call__(self, f):
+        f[self.bounced] = f[self.outgoing]
+        return f
+
+    def make_no_stream_mask(self, f_shape):
+        mask = np.zeros(f_shape, dtype=bool)
+        mask[tuple(self.bounced)] = 1
+        mask = self.lattice.convert_to_tensor(mask)
+        return mask
