@@ -373,9 +373,12 @@ class NonEquilibriumExtrapolationOutlet(object):
    #     no_stream_mask[[self.velocities_in] + self.index] = 1
    #     return no_stream_mask
 
+# der ist gut?^^
 class NonEquilibriumExtrapolationInletU(object):
-    """ Zou's boundary condition
+    """ Guo's boundary condition
     use on post stream populations!!!!!
+    https://www.researchgate.net/publication/230963379_Non-equilibrium_extrapolation_method_for_velocity_and_boundary_conditions_in_the_lattice_Boltzmann_method
+    or LBM book page 189
         """
 
     def __init__(self, lattice, u_w, direction):
