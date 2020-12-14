@@ -17,17 +17,52 @@ The no-collision mask has the same dimensions as the grid (x, y, (z)).
 
 import torch
 import numpy as np
-from lettuce import (LettuceException)
+from lettuce import (LettuceException, StandardStreaming, DistributedStreaming)
 
 
 __all__ = ["BounceBackBoundary", "AntiBounceBackOutlet", "EquilibriumBoundaryPU", "EquilibriumOutletP",
            "ZeroGradientOutlet", "BounceBackVelocityInlet", "EquilibriumExtrapolationOutlet",
            "NonEquilibriumExtrapolationOutlet", "NonEquilibriumExtrapolationInletU", "ConvectiveBoundaryOutlet",
-           "HalfWayBounceBackWall", "HalfWayBounceBackObject"]
+           "HalfWayBounceBackWall", "HalfWayBounceBackObject", "BounceBackWall"]
 
 
-class DirectionalBoundary(object):
-    pass
+class DirectionalBoundary:
+    """Base class for implementing boundaries that apply along an entire side of the domain, do not make objects of this"""
+
+    def __init__(self, lattice, direction):
+        assert (isinstance(direction, list) and len(direction) in [1,2,3] and ((np.abs(sum(direction)) == 1) and (np.max(np.abs(direction)) == 1) and (1 in direction) ^ (-1 in direction))), \
+            LettuceException("Wrong direction. Expected list of length 1, 2 or 3 with all entrys 0 except one 1 or -1, "
+                                f"but got {type(direction)} of size {len(direction)} and entrys {direction}.")
+        self.direction = np.array(direction)
+        self.lattice = lattice
+
+        # dimension in which the boundary applies (don't forget to add 1, when indexing f / u)
+        self.dim = np.argwhere(self.direction != 0).item()
+        # select velocities pointing out of / into the domain
+        self.velocities_out = np.concatenate(np.argwhere(lattice.stencil.e[:, self.dim] == direction[self.dim]))
+        self.velocities_in = np.array(lattice.stencil.opposite)[self.velocities_out]
+
+        # build indices of u and f that determine the side of the domain
+        self.index = []
+        self.neighbor = []
+        for i in self.direction:
+            if i == 0:
+                self.index.append(slice(None))
+                self.neighbor.append(slice(None))
+            if i == 1:
+                self.index.append(-1)
+                self.neighbor.append(-2)
+            if i == -1:
+                self.index.append(0)
+                self.neighbor.append(1)
+
+    def __call__(self, f):
+        pass
+
+    def make_no_stream_mask(self, f_shape):
+        no_stream_mask = torch.zeros(size=f_shape, dtype=torch.bool, device=self.lattice.device)
+        no_stream_mask[[self.velocities_in] + self.index] = 1
+        return no_stream_mask
 
 
 class ObjectBoundary(object):
@@ -96,6 +131,36 @@ class BounceBackBoundary:
     def make_no_collision_mask(self, grid_shape):
         assert self.mask.shape == grid_shape
         return self.mask
+
+class BounceBackWall(DirectionalBoundary):
+    """Fullway Bounce-Back Boundary"""
+
+    def __init__(self, lattice, direction, grid):
+        super().__init__(lattice, direction)
+        self.ghost_layer = torch.zeros(grid.shape)[[lattice.Q] + self.index]
+        if grid.size > 1:
+            self.streaming = DistributedStreaming(lattice, grid.rank, grid.size)
+        else:
+            self.streaming = StandardStreaming(lattice)
+
+    def __call__(self, f):#, f_old):
+        if np.sum(self.direction) > 0:
+            tmp = torch.cat((f[[slice(None)] + self.index], self.ghost_layer), dim=self.dim + 1)
+            pos = 1
+        else:
+            tmp = torch.cat((self.ghost_layer, f[[slice(None)] + self.index]), dim=self.dim + 1)
+            pos = 2
+        pad = [0 for _ in range((self.lattice.D + 1) * 2)]
+        pad[(self.lattice.D - self.dim) * 2] = 1
+        pad[(self.lattice.D - self.dim) * 2 + 1] = 1
+        tmp = torch.nn.functional.pad(tmp, pad)
+        self.streaming(tmp)
+        index = [slice(None) for _ in range(self.lattice.D + 1)]
+        index[self.dim + 1] = pos
+        f[[slice(None)] + self.index] = tmp[index]
+        #streamen in und aus ghost layer, dann die in ghost layer umdrehen
+        self.ghost_layer = self.ghost_layer[self.lattice.stencil.opposite]
+        return f
 
 class EquilibriumBoundaryPU:
     """Sets distributions on this boundary to equilibrium with predefined velocity and pressure.

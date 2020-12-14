@@ -13,6 +13,7 @@ from torch.multiprocessing import Process
 
 __all__ = ["DistributedSimulation", "DistributedStreaming", "DistributedStreamcolliding", "distribute"]
 
+
 def _init_processes(device, rank, size, fn, backend='tcp'):
     """ Initialize the distributed environment. """
     dist.init_process_group(backend)
@@ -25,12 +26,14 @@ def _init_processes(device, rank, size, fn, backend='tcp'):
 
     fn(device, rank, size)
 
+
 def _init_process(device, rank, size, fn, backend='gloo'):
     """ Initialize the distributed environment. """
     os.environ['MASTER_ADDR'] = '127.0.0.1'
     os.environ['MASTER_PORT'] = '29500'
     dist.init_process_group(backend, rank=rank, world_size=size)
     fn(device, rank, size)
+
 
 def distribute(function, size, device, backend="gloo"):
     assert backend == "gloo" or backend == "mpi", \
