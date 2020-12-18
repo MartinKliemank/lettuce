@@ -17,7 +17,7 @@ The no-collision mask has the same dimensions as the grid (x, y, (z)).
 
 import torch
 import numpy as np
-from lettuce import (LettuceException, StandardStreaming, DistributedStreaming)
+from lettuce import (LettuceException)
 
 
 __all__ = ["BounceBackBoundary", "AntiBounceBackOutlet", "EquilibriumBoundaryPU", "EquilibriumOutletP",
@@ -137,11 +137,12 @@ class BounceBackWall(DirectionalBoundary):
 
     def __init__(self, lattice, direction, grid):
         super().__init__(lattice, direction)
-        self.ghost_layer = torch.zeros(grid.shape)[[lattice.Q] + self.index]
-        if grid.size > 1:
-            self.streaming = DistributedStreaming(lattice, grid.rank, grid.size)
-        else:
-            self.streaming = StandardStreaming(lattice)
+        self.ghost_layer = torch.zeros((lattice.Q,) + grid.shape)[[slice(None)] + self.index]
+        self.streaming = None
+        #if grid.size > 1:
+            #self.streaming = DistributedStreaming(lattice, grid.rank, grid.size)
+        #else:
+            #self.streaming = StandardStreaming(lattice)
 
     def __call__(self, f):#, f_old):
         if np.sum(self.direction) > 0:
@@ -150,9 +151,9 @@ class BounceBackWall(DirectionalBoundary):
         else:
             tmp = torch.cat((self.ghost_layer, f[[slice(None)] + self.index]), dim=self.dim + 1)
             pos = 2
-        pad = [0 for _ in range((self.lattice.D + 1) * 2)]
-        pad[(self.lattice.D - self.dim) * 2] = 1
-        pad[(self.lattice.D - self.dim) * 2 + 1] = 1
+        pad = [0 for _ in range((self.lattice.D -1 + 1) * 2)]
+        pad[(self.lattice.D - 1 - self.dim) * 2] = 1
+        pad[(self.lattice.D - 1 - self.dim) * 2 + 1] = 1
         tmp = torch.nn.functional.pad(tmp, pad)
         self.streaming(tmp)
         index = [slice(None) for _ in range(self.lattice.D + 1)]
