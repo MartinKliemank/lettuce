@@ -23,7 +23,7 @@ from lettuce import (LettuceException)
 __all__ = ["BounceBackBoundary", "AntiBounceBackOutlet", "EquilibriumBoundaryPU", "EquilibriumOutletP",
            "ZeroGradientOutlet", "BounceBackVelocityInlet", "EquilibriumExtrapolationOutlet",
            "NonEquilibriumExtrapolationOutlet", "NonEquilibriumExtrapolationInletU", "ConvectiveBoundaryOutlet",
-           "HalfWayBounceBackWall", "HalfWayBounceBackObject", "BounceBackWall"]
+           "HalfWayBounceBackWall", "HalfWayBounceBackObject", "BounceBackWall", "KineticBoundaryOutlet"]
 
 
 class DirectionalBoundary:
@@ -133,12 +133,14 @@ class BounceBackBoundary:
         return self.mask
 
 class BounceBackWall(DirectionalBoundary):
+    #TODO: im streaming ist die no_stream_maske zu groß...
     """Fullway Bounce-Back Boundary"""
 
     def __init__(self, lattice, direction, grid):
         super().__init__(lattice, direction)
-        self.ghost_layer = torch.zeros((lattice.Q,) + grid.shape)[[slice(None)] + self.index]
+        self.ghost_layer = torch.zeros((lattice.Q,) + grid.shape, dtype=lattice.dtype, device=lattice.device)[[slice(None)] + self.index]
         self.streaming = None
+        self.grid = grid
         #if grid.size > 1:
             #self.streaming = DistributedStreaming(lattice, grid.rank, grid.size)
         #else:
@@ -149,19 +151,33 @@ class BounceBackWall(DirectionalBoundary):
             tmp = torch.cat((f[[slice(None)] + self.index], self.ghost_layer), dim=self.dim + 1)
             pos = 1
         else:
-            tmp = torch.cat((self.ghost_layer, f[[slice(None)] + self.index]), dim=self.dim + 1)
+            tmp = torch.cat((self.ghost_layer.unsqueeze(self.dim + 1), f[[slice(None)] + self.index].unsqueeze(self.dim + 1)), dim=self.dim + 1)
             pos = 2
         pad = [0 for _ in range((self.lattice.D -1 + 1) * 2)]
         pad[(self.lattice.D - 1 - self.dim) * 2] = 1
         pad[(self.lattice.D - 1 - self.dim) * 2 + 1] = 1
         tmp = torch.nn.functional.pad(tmp, pad)
-        self.streaming(tmp)
+
+        self.grid.reassemble(tmp)
+        if self.grid.rank == 0:
+            for i in range(self.lattice.Q):
+                tmp = self._stream(tmp, i)
+        #self.streaming(tmp)
+        #if self.grid.rank > 0: # TODO
+        #    input = torch.zeros_like(tmp[0, ...])
+        #    inp = torch.dist.recv(tensor=input.contiguous(), src=0)
+        #elif self.grid.rank == 0:
+        #    torch.dist.scatter(to all den ganzen / den jeweiligen Teil)
+
         index = [slice(None) for _ in range(self.lattice.D + 1)]
         index[self.dim + 1] = pos
         f[[slice(None)] + self.index] = tmp[index]
         #streamen in und aus ghost layer, dann die in ghost layer umdrehen
         self.ghost_layer = self.ghost_layer[self.lattice.stencil.opposite]
         return f
+
+    def _stream(self, f, i):
+        return torch.roll(f[i], shifts=tuple(self.lattice.stencil.e[i]), dims=tuple(np.arange(self.lattice.D)))
 
 class EquilibriumBoundaryPU:
     """Sets distributions on this boundary to equilibrium with predefined velocity and pressure.
@@ -227,6 +243,7 @@ class AntiBounceBackOutlet:
             self.w = self.lattice.w[self.velocities]
 
     def __call__(self, f):
+        #TODO ? geht kaputt wenn u_w < 0!!!
         u = self.lattice.u(f)
         u_w = u[[slice(None)] + self.index] + 0.5 * (u[[slice(None)] + self.index] - u[[slice(None)] + self.neighbor])
         f[[np.array(self.lattice.stencil.opposite)[self.velocities]] + self.index] = (
@@ -631,3 +648,24 @@ class HalfWayBounceBackWall:
         mask[tuple(self.bounced)] = 1
         mask = self.lattice.convert_to_tensor(mask)
         return mask
+
+class KineticBoundaryOutlet(DirectionalBoundary):
+
+    def __init__(self, lattice, direction):
+        super().__init__(lattice, direction)
+# TODO prodziert komische Welle und zerstört Dichte völlig :x
+    # nach https://www.sciencedirect.com/science/article/pii/S0045793017302189#bib0028 formel (11)
+
+    def __call__(self, f):
+        u = self.lattice.u(f)
+        rho = self.lattice.rho(f)
+        u_w = torch.zeros_like(u[[slice(None)] + self.index]) # 0 because stationary wall TODO ist das Unfug? was besseres?
+        rho_w = torch.ones_like(rho[[0] + self.index]) # is cancelled in the formula ( sum(x) / sum(rho * y) x (rho * u) )
+        f_eq = self.lattice.equilibrium(rho_w, u_w)
+        f[[self.velocities_in] + self.index] = torch.einsum("..., u... -> u...", torch.sum(f[[self.velocities_out] + self.index], dim=0) / torch.sum(f_eq[self.velocities_in], dim=0), f_eq[self.velocities_in])
+        return f
+
+    def make_no_stream_mask(self, f_shape):
+        no_stream_mask = torch.zeros(size=f_shape, dtype=torch.bool, device=self.lattice.device)
+        no_stream_mask[[self.velocities_in] + self.index] = 1
+        return no_stream_mask
