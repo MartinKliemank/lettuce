@@ -14,7 +14,7 @@ from torch.multiprocessing import Process
 __all__ = ["DistributedSimulation", "DistributedStreaming", "DistributedStreamcolliding", "distribute"]
 
 
-def _init_processes(device, rank, size, fn, backend='tcp'):
+def _init_processes_mpi(device, rank, size, fn, backend='mpi'):
     """ Initialize the distributed environment. """
     dist.init_process_group(backend)
     print(f"Process {rank} of {size} starting up!")
@@ -27,7 +27,7 @@ def _init_processes(device, rank, size, fn, backend='tcp'):
     fn(device, rank, size)
 
 
-def _init_process(device, rank, size, fn, backend='gloo'):
+def _init_processes_gloo(device, rank, size, fn, backend='gloo'):
     """ Initialize the distributed environment. """
     os.environ['MASTER_ADDR'] = '127.0.0.1'
     os.environ['MASTER_PORT'] = '29500'
@@ -45,12 +45,12 @@ def distribute(function, size, device, backend="gloo"):
     if backend == "mpi":
         world_size = int(os.environ['OMPI_COMM_WORLD_SIZE'])
         world_rank = int(os.environ['OMPI_COMM_WORLD_RANK'])
-        _init_processes(device, world_rank, world_size, function, backend='mpi')
+        _init_processes_mpi(device, world_rank, world_size, function, backend='mpi')
 
     if backend == "gloo":
         processes = []
         for rank in range(size):
-            p = Process(target=_init_process, args=(device, rank, size, function))
+            p = Process(target=_init_processes_gloo, args=(device, rank, size, function))
             p.start()
             processes.append(p)
 
