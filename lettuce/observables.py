@@ -7,12 +7,13 @@ The `__call__` function takes f as an argument and returns a torch tensor.
 
 import torch
 import numpy as np
+import time
 from lettuce.util import torch_gradient
 from lettuce.boundary import BounceBackBoundary
 
 
 __all__ = ["Observable", "MaximumVelocity", "IncompressibleKineticEnergy", "Enstrophy", "EnergySpectrum",
-           "DragCoefficient"]
+           "DragCoefficient", "StepTime"]
 
 
 class Observable:
@@ -134,3 +135,17 @@ class DragCoefficient(Observable):
         #Fw =  self.flow.units.convert_force_to_pu(1**self.lattice.D * self.factor * torch.einsum('ixy, id -> d', [f, self.lattice.e])[0]/1)
         drag_coefficient = Fw / (0.5 * rho * self.flow.units.characteristic_velocity_lu**2 * self.flow.area)
         return drag_coefficient
+
+class StepTime(Observable):
+    """Outputs the duration of each time step (or multiple steps depending on reporter interval),
+    increases execution time by about 0.33 ms per call (on 7th-gen i5 with 4 threads)"""
+
+    def __init__(self, lattice, flow):
+        self.lattice = lattice
+        self.flow = flow
+        self.time = time.time()
+
+    def __call__(self, f):
+        old_time = self.time
+        self.time = time.time()
+        return self.lattice.convert_to_tensor(self.time - old_time)
