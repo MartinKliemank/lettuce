@@ -73,13 +73,14 @@ class Simulation:
                 #elif not isinstance(boundary, NonEquilibriumExtrapolationInletU):
                 #    #self.f = boundary(self.f)
                  #   pass
-            pre_stream_f = self.f
+            #commented for ram testing
+            #pre_stream_f = self.f
             self.f = self.streaming(self.f)
             for boundary in self._boundaries:
                 if not hasattr(boundary, "make_no_stream_mask"):#isinstance(boundary, NonEquilibriumExtrapolationInletU):
                     self.f = boundary(self.f)
                 elif hasattr(boundary, "make_no_stream_mask"):
-                    self.f = torch.where(boundary.make_no_stream_mask(self.f.shape), boundary(pre_stream_f), self.f)
+                    self.f = torch.where(boundary.make_no_stream_mask(self.f.shape), boundary(self.f), self.f)
             #Perform the collision routine everywhere, expect where the no_collision_mask is true
             self.f = torch.where(self.no_collision_mask, self.f, self.collision(self.f))
             self._report()

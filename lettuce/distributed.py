@@ -110,23 +110,20 @@ class DistributedSimulation(Simulation):
             self._report()
         for _ in range(num_steps):
             self.i += 1
-            if isinstance(self.streaming, DistributedStreamcolliding):
-                self.f = self.streaming(self.f, self.no_collision_mask)
-            else:
-                self.f = self.streaming(self.f)
-                # Perform the collision routine everywhere, expect where the no_collision_mask is true
-                self.f = torch.where(self.no_collision_mask, self.f, self.collision(self.f))
-                for boundary in self._boundaries:
-                    # Unterscheidung in "has direction" und has mask -> indices vs. ifs
-                    if hasattr(boundary, "direction"):
-                        if boundary.direction[0] == -1 and self.rank == 0:
-                            self.f = boundary(self.f)
-                        elif boundary.direction[0] == 1 and self.rank == self.size - 1:
-                            self.f = boundary(self.f)
-                        elif boundary.direction[0] == 0:
-                            self.f = boundary(self.f)
-                    else:
-                        self.f = boundary(self.f, self.flow.grid.index)
+            self.f = self.streaming(self.f)
+            # Perform the collision routine everywhere, expect where the no_collision_mask is true
+            self.f = torch.where(self.no_collision_mask, self.f, self.collision(self.f))
+            for boundary in self._boundaries:
+                # Unterscheidung in "has direction" und has mask -> indices vs. ifs
+                if hasattr(boundary, "direction"):
+                    if boundary.direction[0] == -1 and self.rank == 0:
+                        self.f = boundary(self.f)
+                    elif boundary.direction[0] == 1 and self.rank == self.size - 1:
+                        self.f = boundary(self.f)
+                    elif boundary.direction[0] == 0:
+                        self.f = boundary(self.f)
+                else:
+                    self.f = boundary(self.f, self.flow.grid.index)
             self._report()
         end = timer()
         seconds = end - start
