@@ -74,13 +74,13 @@ class Simulation:
                 #    #self.f = boundary(self.f)
                  #   pass
             #commented for ram testing
-            #pre_stream_f = self.f
+            pre_stream_f = self.f
             self.f = self.streaming(self.f)
             for boundary in self._boundaries:
                 if not hasattr(boundary, "make_no_stream_mask"):#isinstance(boundary, NonEquilibriumExtrapolationInletU):
                     self.f = boundary(self.f)
                 elif hasattr(boundary, "make_no_stream_mask"):
-                    self.f = torch.where(boundary.make_no_stream_mask(self.f.shape), boundary(self.f), self.f)
+                    self.f = torch.where(boundary.make_no_stream_mask(self.f.shape), boundary(pre_stream_f), self.f)
             #Perform the collision routine everywhere, expect where the no_collision_mask is true
             self.f = torch.where(self.no_collision_mask, self.f, self.collision(self.f))
             self._report()
@@ -149,7 +149,7 @@ class Simulation:
             S = torch.cat([S, grad_u2])
 
         Pi_1 = 1.0 * self.flow.units.relaxation_parameter_lu * rho * S / self.lattice.cs**2
-        Q = torch.einsum('ia,ib->iab', [self.lattice.e, self.lattice.e]) - torch.eye(self.lattice.D, device=self.lattice.device, dtype=self.lattice.dtype)*self.lattice.cs**2
+        Q = torch.einsum('ia,ib->iab', self.lattice.e, self.lattice.e) - torch.eye(self.lattice.D, device=self.lattice.device, dtype=self.lattice.dtype)*self.lattice.cs**2
         Pi_1_Q = self.lattice.einsum('ab,iab->i', [Pi_1, Q])
         fneq = self.lattice.einsum('i,i->i', [self.lattice.w, Pi_1_Q])
 

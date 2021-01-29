@@ -30,11 +30,11 @@ class QuadraticEquilibrium_LessMemory(QuadraticEquilibrium):
     before starting your simulation
     """
     def __call__(self, rho, u, *args):
-        return self.lattice.einsum(
-            "q,q->q",
-            [self.lattice.w,
-             (rho * ((2 * torch.tensordot(self.lattice.e, u, dims=1) - self.lattice.einsum("d,d->", [u, u])) / (2 * self.lattice.cs ** 2) + 0.5 * (
-                         torch.tensordot(self.lattice.e, u, dims=1) / (self.lattice.cs ** 2)) ** 2 + 1))]
+        return torch.einsum(
+            "q,q...->q...",
+            self.lattice.w,
+             (rho * ((2 * torch.tensordot(self.lattice.e, u, dims=1) - torch.einsum("d...,d...->...", u, u)) / (2 * self.lattice.cs ** 2) + 0.5 * (
+                         torch.tensordot(self.lattice.e, u, dims=1) / (self.lattice.cs ** 2)) ** 2 + 1))
         )
 
 

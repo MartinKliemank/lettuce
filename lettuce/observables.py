@@ -13,7 +13,7 @@ from lettuce.boundary import BounceBackBoundary
 
 
 __all__ = ["Observable", "MaximumVelocity", "IncompressibleKineticEnergy", "Enstrophy", "EnergySpectrum",
-           "DragCoefficient", "StepTime"]
+           "DragCoefficient", "StepTime", "LocalPressure"]
 
 
 class Observable:
@@ -149,3 +149,16 @@ class StepTime(Observable):
         old_time = self.time
         self.time = time.time()
         return self.lattice.convert_to_tensor(self.time - old_time)
+
+class LocalPressure(Observable):
+    """The drag coefficient of obstacle, calculated using momentum exchange method"""
+    def __init__(self, lattice, flow, coordinates):
+        self.lattice = lattice
+        self.flow = flow
+        assert ((coordinates[0] > flow.grid.index.start) and (coordinates[0] < flow.grid.index.stop)), \
+            Exception(f"Process with rank {flow.grid.rank} can't output pressure from domain of other process (at {coordinates})!")
+        self.coordinates = [int(x) for x in list(coordinates)]
+        self.coordinates = self.flow.grid.cconvert_coordinate_global_to_local(self.coordinates)
+
+    def __call__(self, f):
+        return self.flow.units.convert_density_lu_to_pressure_pu(self.lattice.rho(f[[slice(None)] + self.coordinates]))

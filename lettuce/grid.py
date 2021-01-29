@@ -90,6 +90,19 @@ class RegularGrid(object):
         else:
             return tensor[index, ...]
 
+    def cconvert_coordinate_global_to_local(self, coordinates):
+        """converts global coordinates into local coordinates in domain of this process"""
+        assert ((coordinates[0] > self.index.start) and (coordinates[0] < self.index.stop)), \
+            Exception(
+                f"The domain of the process with rank {self.rank} does not contain {coordinates})!")
+        coordinates[0] = coordinates[0] - self.index.start
+        return coordinates
+
+    def convert_coordinate_local_to_global(self, coordinates):
+        """converts local coordinates into global coordinates"""
+        coordinates[0] = coordinates[0] + self.index.start
+        return coordinates
+
     def reassemble(self, tensor):
         """recombines tensor that is spread to all processes in process 0
         (should just return tensor if only one process exists)"""

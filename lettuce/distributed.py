@@ -110,20 +110,34 @@ class DistributedSimulation(Simulation):
             self._report()
         for _ in range(num_steps):
             self.i += 1
+            pre_stream_f = self.f
             self.f = self.streaming(self.f)
             # Perform the collision routine everywhere, expect where the no_collision_mask is true
             self.f = torch.where(self.no_collision_mask, self.f, self.collision(self.f))
             for boundary in self._boundaries:
-                # Unterscheidung in "has direction" und has mask -> indices vs. ifs
-                if hasattr(boundary, "direction"):
-                    if boundary.direction[0] == -1 and self.rank == 0:
-                        self.f = boundary(self.f)
-                    elif boundary.direction[0] == 1 and self.rank == self.size - 1:
-                        self.f = boundary(self.f)
-                    elif boundary.direction[0] == 0:
-                        self.f = boundary(self.f)
-                else:
-                    self.f = boundary(self.f, self.flow.grid.index)
+                if not hasattr(boundary, "make_no_stream_mask"):
+                    # Unterscheidung in "has direction" und has mask -> indices vs. ifs
+                    if hasattr(boundary, "direction"):
+                        if boundary.direction[0] == -1 and self.rank == 0:
+                            self.f = boundary(self.f)
+                        elif boundary.direction[0] == 1 and self.rank == self.size - 1:
+                            self.f = boundary(self.f)
+                        elif boundary.direction[0] == 0:
+                            self.f = boundary(self.f)
+                    else:
+                        self.f = boundary(self.f, self.flow.grid.index)
+                elif hasattr(boundary, "make_no_stream_mask"):
+                    if hasattr(boundary, "direction"):
+                        if boundary.direction[0] == -1 and self.rank == 0:
+                            self.f = torch.where(self.flow.grid.select(boundary.make_no_stream_mask(torch.Size([self.lattice.Q]+list(self.flow.grid.global_shape)))), boundary(pre_stream_f), self.f)
+                        elif boundary.direction[0] == 1 and self.rank == self.size - 1:
+                            self.f = torch.where(self.flow.grid.select(boundary.make_no_stream_mask(torch.Size([self.lattice.Q] + list(self.flow.grid.global_shape)))),boundary(pre_stream_f), self.f)
+
+                        elif boundary.direction[0] == 0:
+                            self.f = torch.where(self.flow.grid.select(boundary.make_no_stream_mask(torch.Size([self.lattice.Q] + list(self.flow.grid.global_shape)))),boundary(pre_stream_f), self.f)
+
+                    else:
+                        self.f = torch.where(self.flow.grid.select(boundary.make_no_stream_mask(torch.Size([self.lattice.Q] + list(self.flow.grid.global_shape)))), boundary(pre_stream_f, self.flow.grid.index), self.f)
             self._report()
         end = timer()
         seconds = end - start
