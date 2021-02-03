@@ -12,7 +12,7 @@ from lettuce.util import torch_gradient
 from lettuce.boundary import BounceBackBoundary
 
 
-__all__ = ["Observable", "MaximumVelocity", "IncompressibleKineticEnergy", "Enstrophy", "EnergySpectrum",
+__all__ = ["Observable", "MaximumVelocity", "IncompressibleKineticEnergy", "Enstrophy", "EnergySpectrum", "Mass",
            "DragCoefficient", "StepTime", "LocalPressure"]
 
 

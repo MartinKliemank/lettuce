@@ -287,8 +287,8 @@ class EquilibriumOutletP(AntiBounceBackOutlet):
         no_stream_mask[[np.setdiff1d(np.arange(self.lattice.Q), self.velocities)] + self.index] = 1
         return no_stream_mask
 
-    def make_no_collision_mask(self, f_shape):
-        no_collision_mask = torch.zeros(size=f_shape[1:], dtype=torch.bool, device=self.lattice.device)
+    def make_no_collision_mask(self, grid_shape):
+        no_collision_mask = torch.zeros(size=grid_shape, dtype=torch.bool, device=self.lattice.device)
         no_collision_mask[self.index] = 1
         return no_collision_mask
 
@@ -492,6 +492,8 @@ class NonEquilibriumExtrapolationInletU(object):
                 self.index.append(0)
                 self.neighbor.append(1)
         self.rho_old = 1.0
+        if len(self.u_w.shape) > self.lattice.D:
+            self.u_w = self.u_w[tuple([slice(None)] + self.index)]
 
     def __call__(self, f):
         Tc = 10
@@ -499,10 +501,13 @@ class NonEquilibriumExtrapolationInletU(object):
         other = [slice(None)] + self.neighbor
         u = self.lattice.convert_to_tensor(self.lattice.u(f[other]))
         rho = self.lattice.convert_to_tensor(self.lattice.rho(f[other]))
-        list = []
-        for _ in u.shape: list += [1]
-        list[0] = len(self.u_w)
-        u_w = self.u_w.view(list).expand_as(u)
+        if self.u_w.shape == u.shape:
+            u_w = self.u_w
+        else:
+            list = []
+            for _ in u.shape: list += [1]
+            list[0] = len(self.u_w)
+            u_w = self.u_w.view(list).expand_as(u)
         rho_self = 1 / (1 - u_w[np.argwhere(self.direction != 0).item()] / self.lattice.e[self.velocities_in[0], np.argwhere(self.direction != 0).item()]) * (
             torch.sum(f[[np.setdiff1d(np.arange(self.lattice.Q), [self.velocities_in, self.velocities_out])] + self.index] + 2 * f[[self.velocities_out] + self.index], dim=0))
         # desnity filtering as proposed by https://www.researchgate.net/publication/257389374_Computational_Gas_Dynamics_with_the_Lattice_Boltzmann_Method_Preconditioning_and_Boundary_Conditions
@@ -659,7 +664,7 @@ class KineticBoundaryOutlet(DirectionalBoundary):
     def __call__(self, f):
         u = self.lattice.u(f)
         rho = self.lattice.rho(f)
-        u_w = torch.zeros_like(u[[slice(None)] + self.index]) # 0 because stationary wall TODO ist das Unfug? was besseres?
+        u_w = u[[slice(None)] + self.neighbor] # 0 because stationary wall TODO ist das Unfug? was besseres?
         rho_w = torch.ones_like(rho[[0] + self.index]) # is cancelled in the formula ( sum(x) / sum(rho * y) x (rho * u) )
         f_eq = self.lattice.equilibrium(rho_w, u_w)
         f[[self.velocities_in] + self.index] = torch.einsum("..., u... -> u...", torch.sum(f[[self.velocities_out] + self.index], dim=0) / torch.sum(f_eq[self.velocities_in], dim=0), f_eq[self.velocities_in])
