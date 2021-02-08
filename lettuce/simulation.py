@@ -23,7 +23,8 @@ class Simulation:
         A list of reporters. Their call functions are invoked after every simulation step (and before the first one).
 
     """
-    def __init__(self, flow, lattice, collision, streaming):
+    def __init__(self, flow, lattice, collision, streaming, nan_steps=None):
+        self.nan_steps = nan_steps
         self.flow = flow
         self.lattice = lattice
         self.collision = collision
@@ -84,10 +85,11 @@ class Simulation:
             #Perform the collision routine everywhere, expect where the no_collision_mask is true
             self.f = torch.where(self.no_collision_mask, self.f, self.collision(self.f))
             self._report()
-            if torch.isnan(self.f).any():
-                self.nan_cnt += 1
-                if self.nan_cnt > 100:
-                    return None
+            if self.nan_steps is not None:
+                if torch.isnan(self.f).any():
+                    self.nan_cnt += 1
+                    if self.nan_cnt > self.nan_steps:
+                        return None
         end = timer()
         seconds = end-start
         num_grid_points = self.lattice.rho(self.f).numel()

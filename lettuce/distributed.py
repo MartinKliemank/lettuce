@@ -60,7 +60,7 @@ def distribute(function, size, device, backend="gloo"):
 
 class DistributedSimulation(Simulation):
 
-    def __init__(self, flow, lattice, collision, streaming, rank, size):
+    def __init__(self, flow, lattice, collision, streaming, rank, size, nan_steps=None):
         self.rank = rank
         self.size = size
 
@@ -139,6 +139,11 @@ class DistributedSimulation(Simulation):
                     else:
                         self.f = torch.where(self.flow.grid.select(boundary.make_no_stream_mask(torch.Size([self.lattice.Q] + list(self.flow.grid.global_shape)))), boundary(pre_stream_f, self.flow.grid.index), self.f)
             self._report()
+            if self.nan_steps is not None:
+                if torch.isnan(self.f).any():
+                    self.nan_cnt += 1
+                    if self.nan_cnt > self.nan_steps:
+                        return None
         end = timer()
         seconds = end - start
         num_grid_points = self.lattice.rho(self.f).numel()
