@@ -63,7 +63,7 @@ class DistributedSimulation(Simulation):
     def __init__(self, flow, lattice, collision, streaming, rank, size, nan_steps=None):
         self.rank = rank
         self.size = size
-
+        self.nan_steps = nan_steps
         self.flow = flow
         self.lattice = lattice
         self.collision = collision
