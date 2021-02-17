@@ -102,6 +102,7 @@ class DistributedSimulation(Simulation):
                 no_stream_mask = no_stream_mask | flow.grid.select(boundary.make_no_stream_mask(torch.Size([lattice.Q]+list(flow.grid.global_shape))))#[[slice(None)] + self.index]
         if no_stream_mask.any():
             self.streaming.no_stream_mask = no_stream_mask
+        self.nan_cnt = 0
 
     def step(self, num_steps):
         """Take num_steps stream-and-collision steps and return performance in MLUPS."""
