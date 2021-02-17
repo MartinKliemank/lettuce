@@ -142,6 +142,9 @@ class DistributedSimulation(Simulation):
             self._report()
             if self.nan_steps is not None:
                 if torch.isnan(self.f).any():
+                    for reporter in self.reporters:
+                        if hasattr(reporter, "nan_out"):
+                            reporter.interval = 10
                     self.nan_cnt += 1
                     if self.nan_cnt > self.nan_steps:
                         return None
