@@ -50,6 +50,7 @@ class RegularGrid(object):
         self.index = slice(int(np.floor(self.resolution[0] * self.rank / self.size)),
                            int(np.floor(self.resolution[0] * (self.rank + 1) / self.size)))
         self.shape = deepcopy(self.__call__()[0].shape)
+        self.shape_pu = [res * self.char_length_pu / self.char_length_lu for res in self.resolution]
         self.global_shape = torch.Size(self.resolution)
 
     def __call__(self):

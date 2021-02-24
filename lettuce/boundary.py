@@ -195,8 +195,19 @@ class EquilibriumBoundaryPU:
         rho = self.units.convert_pressure_pu_to_density_lu(self.pressure)
         u = self.units.convert_velocity_to_lu(self.velocity)
         feq = self.lattice.equilibrium(rho, u)
-        feq = self.lattice.einsum("q,q->q", [feq, torch.ones_like(f)])
-        f = torch.where(self.mask[index], feq, f)
+        if len(feq.shape) == 1:
+            feq = self.lattice.einsum("q,q->q", [feq, torch.ones_like(f)])
+            f = torch.where(self.mask[index], feq, f)
+        else:
+            count = 0
+            for dim in feq.shape:
+                for dam in f.shape:
+                    if dam == dim:
+                        count += 1
+            if count == self.lattice.D:
+                f[:, self.mask] = feq
+            else:
+                raise NotImplementedError
         return f
 
 
