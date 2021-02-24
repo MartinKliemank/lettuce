@@ -205,7 +205,7 @@ class EquilibriumBoundaryPU:
                     if dam == dim:
                         count += 1
             if count == self.lattice.D:
-                f[:, self.mask] = feq
+                f[:, self.mask] = torch.flatten(feq, 1)
             else:
                 raise NotImplementedError
         return f
