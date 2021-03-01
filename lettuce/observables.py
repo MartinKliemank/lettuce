@@ -155,10 +155,18 @@ class LocalPressure(Observable):
     def __init__(self, lattice, flow, coordinates):
         self.lattice = lattice
         self.flow = flow
-        assert ((coordinates[0] > flow.grid.index.start) and (coordinates[0] < flow.grid.index.stop)), \
-            Exception(f"Process with rank {flow.grid.rank} can't output pressure from domain of other process (at {coordinates})!")
-        self.coordinates = [int(x) for x in list(coordinates)]
-        self.coordinates = self.flow.grid.cconvert_coordinate_global_to_local(self.coordinates)
+        #assert ((coordinates[0] > flow.grid.index.start) and (coordinates[0] < flow.grid.index.stop)), \
+        #    Exception(f"Process with rank {flow.grid.rank} can't output pressure from domain of other process (at {coordinates})!")
+        self.coordinates = []
+        print("Coordinates of p reporter in order:")
+        for point in coordinates:
+            self.coordinates.append([int(x) for x in list(point)])
+            print(point)
+        #self.coordinates = self.flow.grid.cconvert_coordinate_global_to_local(self.coordinates)
 
     def __call__(self, f):
-        return self.flow.units.convert_density_lu_to_pressure_pu(self.lattice.rho(f[[slice(None)] + self.coordinates]))
+        p = torch.zeros(len(self.coordinates), device=self.lattice.device, dtype=self.lattice.dtype)
+        p_global = self.flow.grid.reassemble(self.flow.units.convert_density_lu_to_pressure_pu(self.lattice.rho(f)))
+        for i, point in enumerate(self.coordinates):
+            p[i] = p_global[[slice(None)] + point]
+        return p

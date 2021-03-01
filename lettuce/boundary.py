@@ -23,7 +23,8 @@ from lettuce import (LettuceException)
 __all__ = ["BounceBackBoundary", "AntiBounceBackOutlet", "EquilibriumBoundaryPU", "EquilibriumOutletP",
            "ZeroGradientOutlet", "BounceBackVelocityInlet", "EquilibriumExtrapolationOutlet",
            "NonEquilibriumExtrapolationOutlet", "NonEquilibriumExtrapolationInletU", "ConvectiveBoundaryOutlet",
-           "HalfWayBounceBackWall", "HalfWayBounceBackObject", "BounceBackWall", "KineticBoundaryOutlet"]
+           "HalfWayBounceBackWall", "HalfWayBounceBackObject", "BounceBackWall", "KineticBoundaryOutlet",
+           "EquilibriumInletU"]
 
 
 class DirectionalBoundary:
@@ -303,6 +304,40 @@ class EquilibriumOutletP(AntiBounceBackOutlet):
         no_collision_mask[self.index] = 1
         return no_collision_mask
 
+
+class EquilibriumInletU(AntiBounceBackOutlet):
+    """Equilibrium inlet with constant velocity.
+    """
+    def __init__(self, lattice, direction, units, u0=0.0):
+        super(EquilibriumInletU, self).__init__(lattice, direction)
+        self.u_w = units.convert_velocity_to_lu(self.lattice.convert_to_tensor(u0))
+
+    def __call__(self, f):
+        here = [slice(None)] + self.index
+        other = [slice(None)] + self.neighbor
+        u = self.lattice.u(f[other])
+        if self.u_w.shape == u.shape:
+            u_w = self.u_w
+        else:
+            list = []
+            for _ in u.shape: list += [1]
+            list[0] = len(self.u_w)
+            u_w = self.u_w.view(list).expand_as(u)
+        rho_w = self.lattice.rho(f[other])
+        f[here] = self.lattice.equilibrium(rho_w[...,None], u_w[...,None])[...,0]
+        return f
+
+
+    def make_no_stream_mask(self, f_shape):
+        no_stream_mask = torch.zeros(size=f_shape, dtype=torch.bool, device=self.lattice.device)
+        no_stream_mask[[np.setdiff1d(np.arange(self.lattice.Q), self.velocities)] + self.index] = 1
+        return no_stream_mask
+
+    def make_no_collision_mask(self, grid_shape):
+        no_collision_mask = torch.zeros(size=grid_shape, dtype=torch.bool, device=self.lattice.device)
+        no_collision_mask[self.index] = 1
+        return no_collision_mask
+
 class EquilibriumExtrapolationOutlet(AntiBounceBackOutlet):
     """Equilibrium outlet with extrapolated pressure and velocity from inside the domain
     """
@@ -408,7 +443,9 @@ class BounceBackVelocityInlet(object):
         for _ in rho.shape: list += [1]
         list[0] = len(self.velocities_out)
         f[[self.velocities_in] + self.index] = (
-                f[[self.velocities_out] + self.index] - 2 * rho_w * (self.lattice.w[self.velocities_out] * torch.matmul(self.lattice.e[self.velocities_out], self.velocity_lu) / self.lattice.cs ** 2).view(list)
+        #        f[[self.velocities_out] + self.index] - 2 * rho_w * (self.lattice.w[self.velocities_out] * torch.matmul(self.lattice.e[self.velocities_out], self.velocity_lu) / self.lattice.cs ** 2).view(list)
+            f[[self.velocities_out] + self.index] - 2 * rho_w * self.lattice.w[self.velocities_out].view(list) *
+            torch.einsum("vq, q... -> v...", self.lattice.e[self.velocities_out], self.velocity_lu) / self.lattice.cs ** 2
         )
         return f
 
@@ -476,13 +513,13 @@ class NonEquilibriumExtrapolationInletU(object):
     or LBM book page 189
         """
 
-    def __init__(self, lattice, u_w, direction):
+    def __init__(self, lattice, units, direction, u_w):
         assert (isinstance(direction, list) and len(direction) in [1,2,3] and ((np.abs(sum(direction)) == 1) and (np.max(np.abs(direction)) == 1) and (1 in direction) ^ (-1 in direction))), \
             LettuceException("Wrong direction. Expected list of length 1, 2 or 3 with all entrys 0 except one 1 or -1, "
                                 f"but got {type(direction)} of size {len(direction)} and entrys {direction}.")
         self.direction = np.array(direction)
         self.lattice = lattice
-        self.u_w = self.lattice.convert_to_tensor(u_w)
+        self.u_w = units.convert_velocity_to_lu(self.lattice.convert_to_tensor(u_w))
 
         # select velocities to be bounced (the ones pointing in "direction")
         self.velocities_out = np.concatenate(np.argwhere(np.matmul(self.lattice.stencil.e, self.direction) > 1 - 1e-6), axis=0)
