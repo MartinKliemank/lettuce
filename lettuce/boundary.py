@@ -449,7 +449,13 @@ class BounceBackVelocityInlet(object):
 
     def __call__(self, f):
         rho = self.lattice.rho(f[[slice(None)] + self.neighbor])
-        rho_w = torch.mean(rho) #rho[[slice(None)] + self.index] + 0.5 * (rho[[slice(None)] + self.index] - rho[[slice(None)] + self.neighbor])  # extrapolation of rho_w from density at boundary and neighbour node, hopefully better than global average / 1
+        #rho_w = torch.mean(rho) #rho[[slice(None)] + self.index] + 0.5 * (rho[[slice(None)] + self.index] - rho[[slice(None)] + self.neighbor])  # extrapolation of rho_w from density at boundary and neighbour node, hopefully better than global average / 1
+        rho_w = 1 / (1 - u_w[np.argwhere(self.direction != 0).item()] *
+                     self.lattice.e[self.velocities_in[0], np.argwhere(self.direction != 0).item()]) * (
+                    torch.sum(f[[np.setdiff1d(np.arange(self.lattice.Q),
+                                              [self.velocities_in, self.velocities_out])] + self.index]
+                              + 2 * f[[self.velocities_out] + self.index], dim=0)
+                )
         list = []
         for _ in rho.shape: list += [1]
         list[0] = len(self.velocities_out)
