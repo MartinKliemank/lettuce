@@ -311,6 +311,12 @@ class EquilibriumInletU(AntiBounceBackOutlet):
     def __init__(self, lattice, direction, units, u0=0.0):
         super(EquilibriumInletU, self).__init__(lattice, direction)
         self.u_w = units.convert_velocity_to_lu(self.lattice.convert_to_tensor(u0))
+        # select velocities to be bounced (the ones pointing in "direction")
+        self.velocities_out = np.concatenate(np.argwhere(np.matmul(self.lattice.stencil.e, self.direction) > 1 - 1e-6),
+                                             axis=0)
+        # select velocities to be replaced (the ones pointing against "direction")
+        self.velocities_in = np.concatenate(np.argwhere(np.matmul(self.lattice.stencil.e, self.direction) < -1 + 1e-6),
+                                            axis=0)
 
     def __call__(self, f):
         here = [slice(None)] + self.index
@@ -323,7 +329,12 @@ class EquilibriumInletU(AntiBounceBackOutlet):
             for _ in u.shape: list += [1]
             list[0] = len(self.u_w)
             u_w = self.u_w.view(list).expand_as(u)
-        rho_w = self.lattice.rho(f[other])
+        #rho_w = self.lattice.rho(f[other])
+        rho_w = 1 / (1 - u_w[np.argwhere(self.direction != 0).item()] *
+            self.lattice.e[self.velocities_in[0], np.argwhere(self.direction != 0).item()]) * (
+            torch.sum(f[[np.setdiff1d(np.arange(self.lattice.Q), [self.velocities_in, self.velocities_out])] + self.index]
+            + 2 * f[[self.velocities_out] + self.index], dim=0)
+        )
         f[here] = self.lattice.equilibrium(rho_w[...,None], u_w[...,None])[...,0]
         return f
 
@@ -333,10 +344,10 @@ class EquilibriumInletU(AntiBounceBackOutlet):
         no_stream_mask[[np.setdiff1d(np.arange(self.lattice.Q), self.velocities)] + self.index] = 1
         return no_stream_mask
 
-    def make_no_collision_mask(self, grid_shape):
-        no_collision_mask = torch.zeros(size=grid_shape, dtype=torch.bool, device=self.lattice.device)
-        no_collision_mask[self.index] = 1
-        return no_collision_mask
+    #def make_no_collision_mask(self, grid_shape):
+    #    no_collision_mask = torch.zeros(size=grid_shape, dtype=torch.bool, device=self.lattice.device)
+    #    no_collision_mask[self.index] = 1
+    #    return no_collision_mask
 
 class EquilibriumExtrapolationOutlet(AntiBounceBackOutlet):
     """Equilibrium outlet with extrapolated pressure and velocity from inside the domain
@@ -544,7 +555,7 @@ class NonEquilibriumExtrapolationInletU(object):
             self.u_w = self.u_w[tuple([slice(None)] + self.index)]
 
     def __call__(self, f):
-        Tc = 10
+        Tc = 100
         here = [slice(None)] + self.index
         other = [slice(None)] + self.neighbor
         u = self.lattice.convert_to_tensor(self.lattice.u(f[other]))
@@ -556,8 +567,9 @@ class NonEquilibriumExtrapolationInletU(object):
             for _ in u.shape: list += [1]
             list[0] = len(self.u_w)
             u_w = self.u_w.view(list).expand_as(u)
-        rho_self = 1 / (1 - u_w[np.argwhere(self.direction != 0).item()] / self.lattice.e[self.velocities_in[0], np.argwhere(self.direction != 0).item()]) * (
-            torch.sum(f[[np.setdiff1d(np.arange(self.lattice.Q), [self.velocities_in, self.velocities_out])] + self.index] + 2 * f[[self.velocities_out] + self.index], dim=0))
+        # 1 = c = dx / xt in LU!!!!!!!!
+        rho_self = 1 / (1 - u_w[np.argwhere(self.direction != 0).item()] * self.lattice.e[self.velocities_in[0], np.argwhere(self.direction != 0).item()]) * (
+           torch.sum(f[[np.setdiff1d(np.arange(self.lattice.Q), [self.velocities_in, self.velocities_out])] + self.index] + 2 * f[[self.velocities_out] + self.index], dim=0))
         # desnity filtering as proposed by https://www.researchgate.net/publication/257389374_Computational_Gas_Dynamics_with_the_Lattice_Boltzmann_Method_Preconditioning_and_Boundary_Conditions
         rho_w = (rho_self + Tc * self.rho_old) / (1+Tc)
         self.rho_old = rho_w

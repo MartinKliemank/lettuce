@@ -2,7 +2,7 @@
 
 from timeit import default_timer as timer
 from lettuce import (
-    LettuceException, get_default_moment_transform, BGKInitialization, ExperimentalWarning, torch_gradient, NonEquilibriumExtrapolationInletU, ConvectiveBoundaryOutlet
+    LettuceException, get_default_moment_transform, BGKInitialization, ExperimentalWarning, torch_gradient, BounceBackBoundary
 )
 from lettuce.util import pressure_poisson
 import pickle
@@ -75,10 +75,13 @@ class Simulation:
                 #    #self.f = boundary(self.f)
                  #   pass
             #commented for ram testing
+            for boundary in self._boundaries:
+                if isinstance(boundary, BounceBackBoundary):
+                    self.f = boundary(self.f)
             pre_stream_f = self.f
             self.f = self.streaming(self.f)
             for boundary in self._boundaries:
-                if not hasattr(boundary, "make_no_stream_mask"):#isinstance(boundary, NonEquilibriumExtrapolationInletU):
+                if not hasattr(boundary, "make_no_stream_mask") and not isinstance(boundary, BounceBackBoundary):#isinstance(boundary, NonEquilibriumExtrapolationInletU):
                     self.f = boundary(self.f)
                 elif hasattr(boundary, "make_no_stream_mask"):
                     self.f = torch.where(boundary.make_no_stream_mask(self.f.shape), boundary(pre_stream_f), self.f)
