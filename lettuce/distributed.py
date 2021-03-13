@@ -1,7 +1,7 @@
 import torch.distributed as dist
 from timeit import default_timer as timer
 from lettuce import (
-    LettuceException, StandardStreaming, Simulation
+    LettuceException, StandardStreaming, Simulation, BounceBackBoundary
 )
 import pickle
 from copy import deepcopy
@@ -111,12 +111,15 @@ class DistributedSimulation(Simulation):
             self._report()
         for _ in range(num_steps):
             self.i += 1
+            for boundary in self._boundaries:
+                if isinstance(boundary, BounceBackBoundary):
+                    self.f = boundary(self.f)
             pre_stream_f = self.f
             self.f = self.streaming(self.f)
             # Perform the collision routine everywhere, expect where the no_collision_mask is true
             self.f = torch.where(self.no_collision_mask, self.f, self.collision(self.f))
             for boundary in self._boundaries:
-                if not hasattr(boundary, "make_no_stream_mask"):
+                if not hasattr(boundary, "make_no_stream_mask") and not isinstance(boundary, BounceBackBoundary):
                     # Unterscheidung in "has direction" und has mask -> indices vs. ifs
                     if hasattr(boundary, "direction"):
                         if boundary.direction[0] == -1 and self.rank == 0:
@@ -127,7 +130,7 @@ class DistributedSimulation(Simulation):
                             self.f = boundary(self.f)
                     else:
                         self.f = boundary(self.f, self.flow.grid.index)
-                elif hasattr(boundary, "make_no_stream_mask"):
+                elif hasattr(boundary, "make_no_stream_mask") :
                     if hasattr(boundary, "direction"):
                         if boundary.direction[0] == -1 and self.rank == 0:
                             self.f = torch.where(self.flow.grid.select(boundary.make_no_stream_mask(torch.Size([self.lattice.Q]+list(self.flow.grid.global_shape)))), boundary(pre_stream_f), self.f)
@@ -142,11 +145,13 @@ class DistributedSimulation(Simulation):
             self._report()
             if self.nan_steps is not None:
                 if torch.isnan(self.f).any():
+                    print("nan detected")
                     for reporter in self.reporters:
                         if hasattr(reporter, "nan_out"):
                             reporter.interval = 10
                     self.nan_cnt += 1
                     if self.nan_cnt > self.nan_steps:
+                        print("Simulation is being cancelled because an f-value is nan.")
                         return None
         end = timer()
         seconds = end - start
