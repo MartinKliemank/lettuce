@@ -167,6 +167,7 @@ class LocalPressure(Observable):
     def __call__(self, f):
         p = torch.zeros(len(self.coordinates), device=self.lattice.device, dtype=self.lattice.dtype)
         p_global = self.flow.grid.reassemble(self.flow.units.convert_density_lu_to_pressure_pu(self.lattice.rho(f)))
-        for i, point in enumerate(self.coordinates):
-            p[i] = p_global[[slice(None)] + point]
+        if self.flow.rank == 0:
+            for i, point in enumerate(self.coordinates):
+                p[i] = p_global[[slice(None)] + point]
         return p
