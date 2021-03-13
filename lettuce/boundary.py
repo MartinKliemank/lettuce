@@ -130,8 +130,6 @@ class BounceBackBoundary:
         return f
 
     def make_no_collision_mask(self, grid_shape):
-        print(self.mask.shape)
-        print(grid_shape)
         assert self.mask.shape == grid_shape
         return self.mask
 
