@@ -130,6 +130,8 @@ class BounceBackBoundary:
         return f
 
     def make_no_collision_mask(self, grid_shape):
+        print(self.mask.shape)
+        print(grid_shape)
         assert self.mask.shape == grid_shape
         return self.mask
 
@@ -450,7 +452,7 @@ class BounceBackVelocityInlet(object):
     def __call__(self, f):
         rho = self.lattice.rho(f[[slice(None)] + self.neighbor])
         #rho_w = torch.mean(rho) #rho[[slice(None)] + self.index] + 0.5 * (rho[[slice(None)] + self.index] - rho[[slice(None)] + self.neighbor])  # extrapolation of rho_w from density at boundary and neighbour node, hopefully better than global average / 1
-        rho_w = 1 / (1 - u_w[np.argwhere(self.direction != 0).item()] *
+        rho_w = 1 / (1 - self.velocity_lu[np.argwhere(self.direction != 0).item()] *
                      self.lattice.e[self.velocities_in[0], np.argwhere(self.direction != 0).item()]) * (
                     torch.sum(f[[np.setdiff1d(np.arange(self.lattice.Q),
                                               [self.velocities_in, self.velocities_out])] + self.index]
