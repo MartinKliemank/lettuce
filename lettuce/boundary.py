@@ -198,17 +198,9 @@ class EquilibriumBoundaryPU:
         feq = self.lattice.equilibrium(rho, u)
         if len(feq.shape) == 1:
             feq = self.lattice.einsum("q,q->q", [feq, torch.ones_like(f)])
-            f = torch.where(self.mask[index], feq, f)
         else:
-            count = 0
-            for dim in feq.shape:
-                for dam in f.shape:
-                    if dam == dim:
-                        count += 1
-            if count == self.lattice.D:
-                f[:, self.mask] = torch.flatten(feq, 1)
-            else:
-                raise NotImplementedError
+            feq = feq.unsqueeze(1).expand_as(f)
+        f = torch.where(self.mask[index], feq, f)
         return f
 
 
