@@ -113,7 +113,7 @@ class DistributedSimulation(Simulation):
             self.i += 1
             for boundary in self._boundaries:
                 if isinstance(boundary, BounceBackBoundary):
-                    self.f = boundary(self.f)
+                    self.f = boundary(self.f, self.flow.grid.index)
             pre_stream_f = self.f
             self.f = self.streaming(self.f)
             # Perform the collision routine everywhere, expect where the no_collision_mask is true
