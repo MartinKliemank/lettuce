@@ -13,7 +13,7 @@ import pyevtk.hl as vtk
 
 __all__ = [
     "write_image", "write_vtk", "VTKReporter", "ObservableReporter", "ErrorReporter",
-    "MaxUReporter", "EnergyReporter", "EnstrophyReporter", "SpectrumReporter"
+    "MaxUReporter", "EnergyReporter", "EnstrophyReporter", "SpectrumReporter", "VTKReporterP"
 ]
 
 
@@ -94,6 +94,19 @@ class VTKReporter:
                             np.arange(0, point_dict["mask"].shape[1]),
                             np.arange(0, point_dict["mask"].shape[2]),
                             pointData=point_dict)
+
+class VTKReporterP(VTKReporter):
+    """VTK Reporter for pressure only"""
+
+    def __call__(self, i, t, f):
+        if i % self.interval == 0:
+            p = self.flow.grid.reassemble(self.flow.units.convert_density_lu_to_pressure_pu(self.lattice.rho(f)))
+            if self.flow.grid.rank == 0:
+                if self.lattice.D == 2:
+                    self.point_dict["p"] = self.lattice.convert_to_numpy(p[0, ..., None])
+                else:
+                    self.point_dict["p"] = self.lattice.convert_to_numpy(p[0, ...])
+                write_vtk(self.point_dict, i, self.filename_base)
 
 
 class ErrorReporter:
