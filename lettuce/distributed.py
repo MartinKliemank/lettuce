@@ -97,9 +97,9 @@ class DistributedSimulation(Simulation):
         self._boundaries = deepcopy(self.flow.boundaries)  # store locally to keep the flow free from the boundary state
         for boundary in self._boundaries:
             if hasattr(boundary, "make_no_collision_mask"):
-                self.no_collision_mask = self.no_collision_mask | flow.grid.select(boundary.make_no_collision_mask(flow.grid.global_shape))#[self.index] #WIP index weg / anpassen
+                self.no_collision_mask = self.no_collision_mask | flow.grid.select(boundary.make_no_collision_mask(flow.grid.global_shape))
             if hasattr(boundary, "make_no_stream_mask"):
-                no_stream_mask = no_stream_mask | flow.grid.select(boundary.make_no_stream_mask(torch.Size([lattice.Q]+list(flow.grid.global_shape))))#[[slice(None)] + self.index]
+                no_stream_mask = no_stream_mask | flow.grid.select(boundary.make_no_stream_mask(torch.Size([lattice.Q]+list(flow.grid.global_shape))))
         if no_stream_mask.any():
             self.streaming.no_stream_mask = no_stream_mask
         self.nan_cnt = 0
